@@ -5,5 +5,3 @@ pub mod disk;
 pub mod git;
 pub mod index;
 pub mod model;
-pub mod output;
-pub mod shell;
