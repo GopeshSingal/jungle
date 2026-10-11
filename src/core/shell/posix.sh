@@ -15,7 +15,7 @@ __jungle_cmd() {
         builtin cd -- "$1"
         return
     else
-        dest = $(command jungle resolve -- "$@") || return
+        dest=$(command jungle resolve -- "$@") || return
     fi
     builtin cd -- "$dest"
 }

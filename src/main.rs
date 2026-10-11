@@ -167,7 +167,7 @@ fn resolve(cfg: &Config, query: &str) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
         Outcome::Ambiguous(candidates) => {
-            eprintln!("jungle:  '{query}' matches morre than one place:");
+            eprintln!("jungle: '{query}' matches more than one place:");
             for (alias, path) in candidates {
                 eprintln!("  {alias:<32} {}", output::tilde(&path));
             }

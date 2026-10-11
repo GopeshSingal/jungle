@@ -47,7 +47,13 @@ pub enum Head {
     Unknown,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialze)]
+impl Default for Head {
+    fn default() -> Self {
+        Head::Unknown
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Worktree {
     pub path:       PathBuf,
     pub name:       String,
@@ -104,7 +110,7 @@ impl Risk {
 impl Worktree {
     pub fn branch(&self) -> Option<&str> {
         match &self.head {
-            Head::Branch(b) => Some(b.as_str),
+            Head::Branch(b) => Some(b.as_str()),
             _               => None,
         }
     }
@@ -127,7 +133,7 @@ impl Worktree {
         if s.ahead_upstream.unwrap_or(0) > 0 {
             risks.push(Risk::Unpushed)
         }
-        let on_default = default_branch.is_some() && self.branch() == default branch;
+        let on_default = default_branch.is_some() && self.branch() == default_branch;
         let has_own_commits = s.ahead_main.map_or(true, |n| n > 0);
         if s.upstream.is_none() && !on_default && s.merged != Some(true) && has_own_commits {
             risks.push(Risk::LocalOnly);

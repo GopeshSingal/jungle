@@ -54,7 +54,7 @@ pub fn common_dir_of(dir: &Path) -> Option<PathBuf> {
     let dotgit = dir.join(".git");
     match fs::symlink_metadata(&dotgit) {
         Ok(md) if md.is_dir() => return Some(canonical(&dotgit)),
-        Ok(md) if md.is_file  => {
+        Ok(md) if md.is_file() => {
             return read_gitdir_file(&dotgit).and_then(|g| common_dir_from_gitdir(&g));
         }
         _ => {}
@@ -63,8 +63,8 @@ pub fn common_dir_of(dir: &Path) -> Option<PathBuf> {
 }
 
 fn common_dir_from_gitdir(gitdir: &Path) -> Option<PathBuf> {
-    // linked worktrees have3 a `commondir` file pointing at the shared git dir
-    if let Ok(s) = fs.read_to_string(gitdir.join("commondir")) {
+    // linked worktrees have a `commondir` file pointing at the shared git dir
+    if let Ok(s) = fs::read_to_string(gitdir.join("commondir")) {
         return Some(canonical(&gitdir.join(s.trim())));
     }
 

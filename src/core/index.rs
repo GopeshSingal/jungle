@@ -7,9 +7,8 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 
 use crate::core::config::{cache_dir, Config};
-use crate::core::git::default_ref;
 use crate::core::model::{Index, Repo, Worktree};
-use crate::core::{discover, git};
+use crate::core::{discover, disk, git};
 
 pub fn now() -> u64 {
     SystemTime::now()
@@ -125,7 +124,7 @@ fn refresh_status(repos: &mut [Repo], disk: bool, untracked: bool) {
             let on_default = default_branch.is_some() && wt.branch() == default_branch.as_deref();
             wt.status = git::status(&wt.path, default_ref.as_deref(), on_default, untracked);
             if disk {
-                // TODO: implement disk usage
+                wt.disk_bytes = Some(disk::usage(&wt.path));
             }
         });
     })

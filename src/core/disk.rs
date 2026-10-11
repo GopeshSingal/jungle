@@ -9,11 +9,11 @@ pub fn usage(path: &Path) -> u64 {
     while let Some(dir) = stack.pop() {
         let Ok(entries) = fs::read_dir(&dir) else {
             continue;
-        }
+        };
         for entry in entries.flatten() {
             let Ok(md) = entry.metadata() else {
                 continue;
-            }
+            };
             if md.is_dir() {
                 if entry.file_name() != ".git" {
                     stack.push(entry.path());

@@ -21,7 +21,7 @@ const FISH: &str = include_str!("jungle.fish");
 
 pub fn init(shell: Shell, cmd: &str) -> Result<String> {
     if cmd.is_empty() || !cmd.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
-        bail!("--cmd must be a plain commmand name, got {cmd:?}");
+        bail!("--cmd must be a plain command name, got {cmd:?}");
     }
     let script = match shell {
         Shell::Zsh  => format!("{POSIX_FUNCTION}\n{ZSH_COMPLETION}"),
