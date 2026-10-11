@@ -1,0 +1,24 @@
+[package]
+name = "jungle-wt"
+version = "0.1.0"
+edition = "2021"
+description = "git worktree management on your machine"
+license = "MIT"
+
+[[bin]]
+name = "jungle"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = {
+    version = "4",
+    features = ["derive"]
+}
+rayon = "1"
+serde = {
+    version = "1",
+    features = ["derive"]
+}
+serde_json = "1"
+toml = "0.8"
