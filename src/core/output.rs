@@ -1,3 +1,4 @@
+use std::io::{self, IsTerminal};
 use std::path::Path;
 
 use crate::core::aliases::{repo_names, worktree_alias};
@@ -145,28 +146,43 @@ pub fn prune(idx: &Index) {
 }
 
 fn state(wt: &Worktree, risks: &[Risk]) -> String {
-    let mut chips: Vec<&str> = Vec::new();
+    let color = use_color();
+    let mut chips: Vec<String> = Vec::new();
     if wt.is_main {
-        chips.push("main");
+        chips.push("main".into());
     }
     if wt.prunable {
-        chips.push("missing");
+        chips.push("missing".into());
     }
     if wt.locked {
-        chips.push("locked");
+        chips.push("locked".into());
     }
-    chips.extend(risks.iter().map(|r| r.chip()));
+    for r in risks {
+        chips.push(paint_chip(r.chip(), color));
+    }
     if wt.merged() {
-        chips.push("merged");
+        chips.push("merged".into());
     }
     if wt.status.is_none() && !wt.prunable {
-        chips.push("?");
+        chips.push("?".into());
     }
     if chips.is_empty() {
         "clean".to_string()
     } else {
         chips.join(" ")
     }
+}
+
+fn paint_chip(chip: &str, color: bool) -> String {
+    if color && chip == "dirty" {
+        format!("\x1b[31m{chip}\x1b[0m")
+    } else {
+        chip.to_string()
+    }
+}
+
+fn use_color() -> bool {
+    io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
 }
 
 fn vs_main(wt: &Worktree) -> String {
@@ -183,11 +199,11 @@ fn vs_main(wt: &Worktree) -> String {
 fn print_rows<const N: usize>(header: [&str; N], rows: &[[String; N]]) {
     let mut widths = [0usize; N];
     for (i, h) in header.iter().enumerate() {
-        widths[i] = h.chars().count();
+        widths[i] = visible_len(h);
     }
     for row in rows {
         for (i, cell) in row.iter().enumerate() {
-            widths[i] = widths[i].max(cell.chars().count());
+            widths[i] = widths[i].max(visible_len(cell));
         }
     }
     let print = |cells: &[&str]| {
@@ -196,7 +212,9 @@ fn print_rows<const N: usize>(header: [&str; N], rows: &[[String; N]]) {
             if i + 1 == N {
                 line.push_str(cell);
             } else {
-                line.push_str(&format!("{:<width$}  ", cell, width = widths[i]));
+                let pad = widths[i].saturating_sub(visible_len(cell));
+                line.push_str(cell);
+                line.extend(std::iter::repeat(' ').take(pad + 2));
             }
         }
         println!("{}", line.trim_end());
@@ -206,6 +224,24 @@ fn print_rows<const N: usize>(header: [&str; N], rows: &[[String; N]]) {
         let cells: Vec<&str> = row.iter().map(String::as_str).collect();
         print(&cells);
     }
+}
+
+// column width ignoring ANSI SGR sequences so colored chips still align
+fn visible_len(s: &str) -> usize {
+    let mut len = 0;
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.next_if_eq(&'[').is_some() {
+            while let Some(c) = chars.next() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            len += 1;
+        }
+    }
+    len
 }
 
 pub fn tilde(p: &Path) -> String {
