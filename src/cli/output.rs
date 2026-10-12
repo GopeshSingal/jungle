@@ -121,7 +121,7 @@ pub fn risk(idx: &Index) {
 }
 
 pub fn prune(idx: &Index) {
-    println!("# Merged, clean worktrees. Review these, then run them (for example `jungle prune | sh`).");
+    println!("# Merged, clean worktrees. Review these, then run `jungle prune --apply`.");
     println!("# jungle can't yet tell whether something is running inside a worktree. Check first.");
 
     let mut count = 0;
@@ -131,9 +131,6 @@ pub fn prune(idx: &Index) {
         for wt in repo.worktrees.iter().filter(|w| w.removable(default)) {
             count += 1;
             println!("git -C {at} worktree remove {}", shell_quote(&wt.path.to_string_lossy()));
-            if let Some(b) = wt.branch() {
-                println!("# git -C {at} worktree prune -d {}", shell_quote(b));
-            }
         }
         let stale = repo.worktrees.iter().filter(|w| w.prunable).count();
         if stale > 0 {
