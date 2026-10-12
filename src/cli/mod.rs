@@ -26,52 +26,52 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    // rediscover repos and refresh status on every worktree
+    /// rediscover repos and refresh status on every worktree
     Scan(ScanArgs),
-    // show every worktree across repos
+    /// show every worktree across repos
     Ls {
         #[command(flatten)]
         scan: ScanArgs,
-        // rescan before listing
+        /// rescan before listing
         #[arg(long)]
         rescan: bool,
-        // print the index as JSON
+        /// print the index as JSON
         #[arg(long)]
         json: bool,
-        // only merged worktrees
+        /// only merged worktrees
         #[arg(long)]
         merged: bool,
-        // only worktrees with risky work
+        /// only worktrees with risky work
         #[arg(long)]
         risk: bool,
     },
-    // list work that only exists on this machine
+    /// list work that only exists on this machine
     Risk {
-        // rescan before listing
+        /// rescan before listing
         #[arg(long)]
         rescan: bool,
     },
-    // print commands that remove merged, clean worktrees
+    /// print commands that remove merged, clean worktrees
     Prune {
-        // rescan before listing
+        /// rescan before listing
         #[arg(long)]
         rescan: bool,
     },
-    // print the path for an alias
+    /// print the path for an alias
     Resolve {
         #[arg(required = true, num_args = 1..)]
         query: Vec<String>,
     },
-    // list every alias and its path
+    /// list every alias and its path
     Aliases {
-        // names only
+        /// names only
         #[arg(long)]
         names: bool,
     },
-    // print shell integration; add `eval "$(jungle init zsh)"` to shell config
+    /// print shell integration; add `eval "$(jungle init zsh)"` to shell config
     Init {
         shell: shell::Shell,
-        // name of the jump command
+        /// name of the jump command
         #[arg(long, default_value = "j")]
         cmd: String,
     },
