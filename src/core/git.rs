@@ -146,3 +146,40 @@ pub fn worktree_add(
     }
     bail!("{err}");
 }
+
+pub fn worktree_remove(home: &Path, path: &Path, force: bool) -> Result<()> {
+    let path_s = path.to_string_lossy();
+    let out = if force {
+        command_loud(home, &["worktree", "remove", "--force", path_s.as_ref()])
+            .output()
+            .with_context(|| format!("running git worktree remove in {}", home.display()))?
+    } else {
+        command_loud(home, &["worktree", "remove", path_s.as_ref()])
+            .output()
+            .with_context(|| format!("running git worktree remove in {}", home.display()))?
+    };
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let err = err.trim();
+    if err.is_empty() {
+        bail!("git worktree remove failed");
+    }
+    bail!("{err}");
+}
+
+pub fn worktree_prune(home: &Path) -> Result<()> {
+    let out = command_loud(home, &["worktree", "prune"])
+        .output()
+        .with_context(|| format!("running git worktree prune in {}", home.display()))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let err = err.trim();
+    if err.is_empty() {
+        bail!("git worktree prune failed");
+    }
+    bail!("{err}");
+}

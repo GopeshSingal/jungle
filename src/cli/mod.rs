@@ -10,7 +10,8 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::core::aliases::{self, Outcome};
 use crate::core::config::{self, Config};
-use crate::core::{index, new};
+use crate::core::model::Index;
+use crate::core::{index, new, rm};
 
 const FRESH_SECS: u64 = 30;
 
@@ -52,11 +53,14 @@ enum Command {
         #[arg(long)]
         rescan: bool,
     },
-    /// print commands that remove merged, clean worktrees
+    /// print or apply removals of merged, clean worktrees
     Prune {
         /// rescan before listing
         #[arg(long)]
         rescan: bool,
+        /// actually remove instead of printing commands
+        #[arg(long)]
+        apply: bool,
     },
     /// print the path for an alias
     Resolve {
@@ -74,6 +78,17 @@ enum Command {
         /// start point when creating a new branch
         #[arg(long)]
         base: Option<String>,
+    },
+    /// remove a linked worktree by alias
+    Rm {
+        #[arg(required = true, num_args = 1..)]
+        query: Vec<String>,
+        /// remove even if dirty, unmerged, or locked
+        #[arg(long)]
+        force: bool,
+        /// rescan before resolving
+        #[arg(long)]
+        rescan: bool,
     },
     /// list every alias and its path
     Aliases {
@@ -136,8 +151,11 @@ pub fn run() -> Result<ExitCode> {
             let idx = index::load_or_scan(&cfg, rescan, false, false)?;
             output::risk(&idx);
         }
-        Command::Prune { rescan } => {
+        Command::Prune { rescan, apply } => {
             let idx = index::load_or_scan(&cfg, rescan, false, false)?;
+            if apply {
+                return prune_apply(&cfg, &idx);
+            }
             output::prune(&idx);
         }
         Command::Resolve { query } => return resolve(&cfg, &query.join(" ")),
@@ -146,6 +164,11 @@ pub fn run() -> Result<ExitCode> {
             path,
             base,
         } => return new_worktree(&cfg, targets, path, base),
+        Command::Rm {
+            query,
+            force,
+            rescan,
+        } => return rm_worktree(&cfg, &query.join(" "), force, rescan),
         Command::Aliases { names } => {
             let idx = index::load_fresh(&cfg, FRESH_SECS);
             for (alias, path) in aliases::all(&idx, &cfg) {
@@ -186,6 +209,30 @@ fn new_worktree(
     let idx = index::rediscover(cfg, Some(&idx));
     index::save(&idx)?;
     println!("{}", created.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn rm_worktree(cfg: &Config, query: &str, force: bool, rescan: bool) -> Result<ExitCode> {
+    let idx = index::load_or_scan(cfg, rescan, false, false)?;
+    let removed = rm::remove(cfg, &idx, query, force)?;
+    let idx = index::rediscover(cfg, Some(&idx));
+    index::save(&idx)?;
+    println!("{}", removed.display());
+    Ok(ExitCode::SUCCESS)
+}
+
+fn prune_apply(cfg: &Config, idx: &Index) -> Result<ExitCode> {
+    let removed = rm::prune_apply(idx)?;
+    if removed.is_empty() {
+        println!("Nothing merged and clean to remove.");
+    } else {
+        for path in &removed {
+            println!("{}", path.display());
+        }
+        println!("Removed {} worktree(s).", removed.len());
+    }
+    let idx = index::rediscover(cfg, Some(idx));
+    index::save(&idx)?;
     Ok(ExitCode::SUCCESS)
 }
 
