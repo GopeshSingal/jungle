@@ -39,7 +39,7 @@ pub fn default_ref(common_dir: &Path) -> Option<(String, String)> {
         return Some((r.to_string(), short.to_string()));
     }
     for branch in ["main", "master"] {
-        let r = format!("refs/head/{branch}");
+        let r = format!("refs/heads/{branch}");
         if succeeds(common_dir, &["rev-parse", "--verify", "-q", &r]) == Some(true) {
             return Some((r, branch.to_string()));
         }
