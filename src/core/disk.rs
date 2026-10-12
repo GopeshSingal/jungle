@@ -15,7 +15,8 @@ pub fn usage(path: &Path) -> u64 {
                 continue;
             };
             if md.is_dir() {
-                if entry.file_name() != ".git" {
+                let name = entry.file_name();
+                if name != ".git" && name != ".jungle" {
                     stack.push(entry.path());
                 }
             } else if md.is_file() {

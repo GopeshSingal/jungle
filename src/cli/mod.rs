@@ -1,6 +1,7 @@
 pub mod output;
 pub mod shell;
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
@@ -9,7 +10,7 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::core::aliases::{self, Outcome};
 use crate::core::config::{self, Config};
-use crate::core::index;
+use crate::core::{index, new};
 
 const FRESH_SECS: u64 = 30;
 
@@ -61,6 +62,18 @@ enum Command {
     Resolve {
         #[arg(required = true, num_args = 1..)]
         query: Vec<String>,
+    },
+    /// create a linked worktree under <repo>/.jungle/
+    New {
+        /// `[repo] <branch>` — repo defaults to the repo containing cwd
+        #[arg(required = true, num_args = 1..=2)]
+        targets: Vec<String>,
+        /// path for the new worktree (default: <repo>/.jungle/<branch>)
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// start point when creating a new branch
+        #[arg(long)]
+        base: Option<String>,
     },
     /// list every alias and its path
     Aliases {
@@ -128,6 +141,11 @@ pub fn run() -> Result<ExitCode> {
             output::prune(&idx);
         }
         Command::Resolve { query } => return resolve(&cfg, &query.join(" ")),
+        Command::New {
+            targets,
+            path,
+            base,
+        } => return new_worktree(&cfg, targets, path, base),
         Command::Aliases { names } => {
             let idx = index::load_fresh(&cfg, FRESH_SECS);
             for (alias, path) in aliases::all(&idx, &cfg) {
@@ -140,6 +158,34 @@ pub fn run() -> Result<ExitCode> {
         }
         Command::Init { shell: sh, cmd } => println!("{}", shell::init(sh, &cmd)?),
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn new_worktree(
+    cfg: &Config,
+    targets: Vec<String>,
+    path: Option<PathBuf>,
+    base: Option<String>,
+) -> Result<ExitCode> {
+    let (repo, branch) = match targets.len() {
+        1 => (None, targets[0].clone()),
+        2 => (Some(targets[0].clone()), targets[1].clone()),
+        _ => unreachable!("clap enforces 1..=2 args"),
+    };
+    let idx = index::load_fresh(cfg, FRESH_SECS);
+    let created = new::create(
+        cfg,
+        &idx,
+        new::Args {
+            repo,
+            branch,
+            path,
+            base,
+        },
+    )?;
+    let idx = index::rediscover(cfg, Some(&idx));
+    index::save(&idx)?;
+    println!("{}", created.display());
     Ok(ExitCode::SUCCESS)
 }
 
