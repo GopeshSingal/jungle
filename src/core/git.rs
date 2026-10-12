@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+use anyhow::{bail, Context, Result};
+
 use crate::core::model::Status;
 
 fn command(dir: &Path, args: &[&str]) -> Command {
@@ -12,6 +14,17 @@ fn command(dir: &Path, args: &[&str]) -> Command {
         .env("GIT_TERMINAL_PROMPT", "0")  // stops git from waiting for a password
         .stdin(Stdio::null())
         .stderr(Stdio::null());
+    cmd
+}
+
+fn command_loud(dir: &Path, args: &[&str]) -> Command {
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null());
     cmd
 }
 
@@ -95,4 +108,41 @@ pub fn status(path: &Path, default_ref: Option<&str>, on_default: bool, untracke
         }
     }
     Some(s)
+}
+
+pub fn branch_exists(home: &Path, branch: &str) -> bool {
+    let r = format!("refs/heads/{branch}");
+    succeeds(home, &["rev-parse", "--verify", "-q", &r]) == Some(true)
+}
+
+pub fn worktree_add(
+    home: &Path,
+    path: &Path,
+    branch: &str,
+    create_new: bool,
+    base: Option<&str>,
+) -> Result<()> {
+    let path_s = path.to_string_lossy();
+    let out = if create_new {
+        let base = base.context("no base ref to create the branch from (pass --base)")?;
+        command_loud(
+            home,
+            &["worktree", "add", "-b", branch, path_s.as_ref(), base],
+        )
+        .output()
+        .with_context(|| format!("running git worktree add in {}", home.display()))?
+    } else {
+        command_loud(home, &["worktree", "add", path_s.as_ref(), branch])
+            .output()
+            .with_context(|| format!("running git worktree add in {}", home.display()))?
+    };
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let err = err.trim();
+    if err.is_empty() {
+        bail!("git worktree add failed");
+    }
+    bail!("{err}");
 }
