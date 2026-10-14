@@ -21,7 +21,8 @@ pub fn remove(cfg: &Config, idx: &Index, query: &str, force: bool) -> Result<Pat
         Outcome::NotFound => bail!("nothing matches '{query}'"),
     };
 
-    let (repo, wt) = find_worktree(idx, &path)
+    let (repo, wt) = idx
+        .worktree_at(&path)
         .with_context(|| format!("no worktree at {}", path.display()))?;
 
     remove_worktree(repo, wt, force)?;
@@ -40,15 +41,6 @@ pub fn remove_worktree(repo: &Repo, wt: &Worktree, force: bool) -> Result<()> {
     }
 
     git::worktree_remove(&repo.home(), &wt.path, force)
-}
-
-fn find_worktree<'a>(idx: &'a Index, path: &Path) -> Option<(&'a Repo, &'a Worktree)> {
-    for repo in &idx.repos {
-        if let Some(wt) = repo.worktrees.iter().find(|w| w.path == path) {
-            return Some((repo, wt));
-        }
-    }
-    None
 }
 
 fn refuse_reasons(wt: &Worktree, default_branch: Option<&str>) -> String {

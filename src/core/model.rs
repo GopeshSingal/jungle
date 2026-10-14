@@ -10,6 +10,17 @@ pub struct Index {
     pub repos:        Vec<Repo>,
 }
 
+impl Index {
+    pub fn worktree_at(&self, path: &Path) -> Option<(&Repo, &Worktree)> {
+        for repo in &self.repos {
+            if let Some(wt) = repo.worktrees.iter().find(|w| w.path == path) {
+                return Some((repo, wt));
+            }
+        }
+        None
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Repo {
     pub name:           String,
