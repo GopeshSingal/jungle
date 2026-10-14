@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use anyhow::{bail, Result};
+
 use crate::core::config::Config;
 use crate::core::model::{Index, Repo, Worktree};
 
@@ -96,6 +98,20 @@ pub fn resolve(idx: &Index, cfg: &Config, query: &str) -> Outcome {
     }
 
     pick(q, &all).into_outcome()
+}
+
+pub fn resolve_one(idx: &Index, cfg: &Config, query: &str) -> Result<PathBuf> {
+    match resolve(idx, cfg, query) {
+        Outcome::Found(path)           => Ok(path),
+        Outcome::Ambiguous(candidates) => {
+            let mut msg = format!("'{query}' matches more than one place:");
+            for (alias, path) in candidates {
+                msg.push_str(&format!("\n {alias:<32} {}", path.display()));
+            }
+            bail!("{msg}");
+        }
+        Outcome::NotFound              => bail!("nothing matches '{query}'"),
+    }
 }
 
 fn resolve_in_repo(idx: &Index, cfg: &Config, repo_q: &str, branch_q: &str) -> Outcome {

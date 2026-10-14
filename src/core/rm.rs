@@ -1,25 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-use crate::core::aliases::{self, Outcome};
+use crate::core::aliases;
 use crate::core::config::Config;
 use crate::core::git;
 use crate::core::model::{Index, Repo, Worktree};
 
 /// remove a worktree by alias and return its path.
 pub fn remove(cfg: &Config, idx: &Index, query: &str, force: bool) -> Result<PathBuf> {
-    let path = match aliases::resolve(idx, cfg, query) {
-        Outcome::Found(path) => path,
-        Outcome::Ambiguous(candidates) => {
-            let mut msg = format!("'{query}' matches more than one place:");
-            for (alias, path) in candidates {
-                msg.push_str(&format!("\n  {alias:<32} {}", path.display()));
-            }
-            bail!("{msg}");
-        }
-        Outcome::NotFound => bail!("nothing matches '{query}'"),
-    };
+    let path = aliases::resolve_one(idx, cfg, query)?;
 
     let (repo, wt) = idx
         .worktree_at(&path)
