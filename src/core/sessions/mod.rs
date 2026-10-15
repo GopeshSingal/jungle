@@ -38,6 +38,15 @@ pub fn attach(repos: &mut [Repo]) {
     }
 }
 
+pub fn resume_command(s: &Session) -> Option<(String, Vec<String>)> {
+    let id = s.id.clone();
+    match s.agent.as_str() {
+        "claude" => Some(("claude".into(), vec!["--resume".into(), id])),
+        "codex"  => Some(("codex".into(), vec!["resume".into(), id])),
+        _        => None,
+    }
+}
+
 // agent's data dir: `$var` when set, else `~/<fallback>`
 fn agent_dir(var: &str, fallback: &str) -> PathBuf {
     match std::env::var_os(var) {

@@ -5,13 +5,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 
 use crate::core::aliases::{self, Outcome};
 use crate::core::config::{self, Config};
-use crate::core::model::Index;
-use crate::core::{index, new, rm};
+use crate::core::model::{Index, Session};
+use crate::core::{index, new, rm, sessions};
 
 const FRESH_SECS: u64 = 30;
 
@@ -96,6 +96,25 @@ enum Command {
         #[arg(long)]
         names: bool,
     },
+    /// list agent sessions per worktree
+    Sessions {
+        /// only the worktree this alias points at
+        query: Vec<String>,
+    },
+    /// resume the newest agent session in a worktree
+    Resume {
+        #[arg(required = true, num_args = 1..)]
+        query: Vec<String>,
+        /// print the command instead of running it
+        #[arg(long)]
+        print: bool,
+        /// resume the nth newest session
+        #[arg(long, default_value_t = 1)]
+        pick: usize,
+        /// only consider this agent's sessions
+        #[arg(long, value_parser = ["claude", "codex"])]
+        agent: Option<String>,
+    },
     /// print shell integration; add `eval "$(jungle init zsh)"` to shell config
     Init {
         shell: shell::Shell,
@@ -179,6 +198,20 @@ pub fn run() -> Result<ExitCode> {
                 }
             }
         }
+        Command::Sessions { query } => {
+            let idx = with_sessions(&cfg);
+            let only = match query.is_empty() {
+                true  => None,
+                false => Some(aliases::resolve_one(&idx, &cfg, &query.join(" "))?),
+            };
+            output::sessions(&idx, only.as_deref());
+        }
+        Command::Resume {
+            query,
+            print,
+            pick,
+            agent,
+        } => return resume(&cfg, &query.join(" "), print, pick, agent.as_deref()),
         Command::Init { shell: sh, cmd } => println!("{}", shell::init(sh, &cmd)?),
     }
     Ok(ExitCode::SUCCESS)
@@ -234,6 +267,55 @@ fn prune_apply(cfg: &Config, idx: &Index) -> Result<ExitCode> {
     let idx = index::rediscover(cfg, Some(idx));
     index::save(&idx)?;
     Ok(ExitCode::SUCCESS)
+}
+
+fn with_sessions(cfg: &Config) -> Index {
+    let mut idx = index::load_fresh(cfg, FRESH_SECS);
+    sessions::attach(&mut idx.repos);
+    idx
+}
+
+fn resume(cfg: &Config, query: &str, print: bool, pick: usize, agent: Option<&str>) -> Result<ExitCode> {
+    let idx = with_sessions(cfg);
+    let path = aliases::resolve_one(&idx, cfg, query)?;
+    let (_, wt) = idx
+        .worktree_at(&path)
+        .with_context(|| format!("no worktree at {}", path.display()))?;
+    let candidates: Vec<&Session> = wt
+        .sessions
+        .iter()
+        .filter(|s| agent.is_none_or(|a| s.agent == a))
+        .collect();
+    let Some(s) = candidates.get(pick.saturating_sub(1)) else {
+        let whose = agent.map(|a| format!("{a} ")).unwrap_or_default();
+        if candidates.is_empty() {
+            bail!("no {whose}sessions found in {}", output::tilde(&wt.path));
+        }
+        bail!("{} has only {} recent {whose}sessions", output::tilde(&wt.path), candidates.len());
+    };
+    let Some((program, args)) = sessions::resume_command(s) else {
+        bail!("don't know how to resume {} sessions", s.agent);
+    };
+
+    if print {
+        let quoted: Vec<String> = args.iter().map(|a| output::shell_word(a)).collect();
+        println!("cd {} && {program} {}", output::shell_quote(&wt.path.to_string_lossy()), quoted.join(" "));
+        return Ok(ExitCode::SUCCESS);
+    }
+    // agents look sessions up by, or resume into, the working dir 
+    let mut cmd = std::process::Command::new(&program);
+    cmd.args(&args).current_dir(&wt.path);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = cmd.exec();
+        bail!("running {program}: {err}");
+    }
+    #[cfg(not(unix))]
+    {
+        let status = cmd.status().with_context(|| format!("running {program}"))?;
+        Ok(if status.success() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
+    }
 }
 
 fn resolve(cfg: &Config, query: &str) -> Result<ExitCode> {

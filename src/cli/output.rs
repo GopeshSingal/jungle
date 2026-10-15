@@ -6,6 +6,8 @@ use crate::core::config::home;
 use crate::core::index::now;
 use crate::core::model::{Index, Risk, Status, Worktree};
 
+const RECENT_SESSION_SECS: u64 = 3600;
+
 pub struct Filter {
     pub merged: bool,
     pub risk:   bool,
@@ -14,7 +16,7 @@ pub struct Filter {
 pub fn table(idx: &Index, filter: &Filter) {
     let now = now();
     let names = repo_names(idx);
-    let mut rows: Vec<[String; 6]> = Vec::new();
+    let mut rows: Vec<[String; 7]> = Vec::new();
     for (repo, name) in idx.repos.iter().zip(&names) {
         let default = repo.default_branch.as_deref();
         for wt in &repo.worktrees {
@@ -37,6 +39,7 @@ pub fn table(idx: &Index, filter: &Filter) {
                 vs_main(wt),
                 last,
                 wt.disk_bytes.map(bytes).unwrap_or_default(),
+                agent(wt, now),
                 tilde(&wt.path),
             ]);
         }
@@ -48,7 +51,7 @@ pub fn table(idx: &Index, filter: &Filter) {
         return;
     }
     println!();
-    print_rows(["ALIAS", "STATE", "VS_MAIN", "LAST COMMIT", "DISK", "PATH"], &rows);
+    print_rows(["ALIAS", "STATE", "VS_MAIN", "LAST COMMIT", "DISK", "AGENT", "PATH"], &rows);
 }
 
 pub fn summary(idx: &Index) -> String {
@@ -120,6 +123,34 @@ pub fn risk(idx: &Index) {
     }
 }
 
+// agent sessions per worktree
+pub fn sessions(idx: &Index, only: Option<&Path>) {
+    let now = now();
+    let names = repo_names(idx);
+    let mut count = 0;
+    for (repo, name) in idx.repos.iter().zip(&names) {
+        for wt in &repo.worktrees {
+            if wt.sessions.is_empty() || only.is_some_and(|p| p != wt.path) {
+                continue;
+            }
+            println!("{}  {}", worktree_alias(name, wt), tilde(&wt.path));
+            for s in &wt.sessions {
+                count += 1;
+                let ago = format!("{} ago", age(now.saturating_sub(s.last_active_at)));
+                let id: String = s.id.chars().take(8).collect();
+                let prompt = s.summary.as_deref().map(|p| clip(p, 70)).unwrap_or_default();
+                println!("   {ago:<8} {} {id}  {prompt}", s.agent);
+            }
+        }
+    }
+    if count == 0 {
+        println!("no agent sessions found");
+    } else {
+        println!();
+        println!("resume the newest with `jungle resume <alias>`");
+    }
+}
+
 pub fn prune(idx: &Index) {
     println!("# Merged, clean worktrees. Review these, then run `jungle prune --apply`.");
     println!("# jungle can't yet tell whether something is running inside a worktree. Check first.");
@@ -130,7 +161,14 @@ pub fn prune(idx: &Index) {
         let at = shell_quote(&repo.home().to_string_lossy());
         for wt in repo.worktrees.iter().filter(|w| w.removable(default)) {
             count += 1;
-            println!("git -C {at} worktree remove {}", shell_quote(&wt.path.to_string_lossy()));
+            let mut line = format!("git -C {at} worktree remove {}", shell_quote(&wt.path.to_string_lossy()));
+            if let Some(s) = wt.last_session() {
+                let idle = now().saturating_sub(s.last_active_at);
+                if idle < RECENT_SESSION_SECS {
+                    line.push_str(&format!("  # {} active {} ago", s.agent, age(idle)));
+                }
+            }
+            println!("{line}");
         }
         let stale = repo.worktrees.iter().filter(|w| w.prunable).count();
         if stale > 0 {
@@ -180,6 +218,26 @@ fn paint_chip(chip: &str, color: bool) -> String {
 
 fn use_color() -> bool {
     io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+}
+
+fn agent(wt: &Worktree, now: u64) -> String {
+    let Some(s) = wt.last_session() else {
+        return String::new();
+    };
+    let mut cell = format!("{} {}", s.agent, age(now.saturating_sub(s.last_active_at)));
+    if wt.sessions.len() > 1 {
+        cell.push_str(&format!(" +{}", wt.sessions.len() - 1));
+    }
+    cell
+}
+
+fn clip(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max - 1).collect();
+    out.push('-');
+    out
 }
 
 fn vs_main(wt: &Worktree) -> String {
@@ -272,6 +330,16 @@ fn bytes(n: u64) -> String {
     }
 }
 
-fn shell_quote(s: &str) -> String {
+pub fn shell_word(s: &str) -> String {
+    let plain = !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_./=:@%+,".contains(c));
+    if plain {
+        s.to_string()
+    } else {
+        shell_quote(s)
+    }
+}
+
+pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
