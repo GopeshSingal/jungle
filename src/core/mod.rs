@@ -7,3 +7,4 @@ pub mod index;
 pub mod model;
 pub mod new;
 pub mod rm;
+pub mod sessions;

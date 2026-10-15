@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 use crate::core::config::{cache_dir, Config};
 use crate::core::model::{Index, Repo, Worktree};
-use crate::core::{discover, disk, git};
+use crate::core::{discover, disk, git, sessions};
 
 pub fn now() -> u64 {
     SystemTime::now()
@@ -42,6 +42,7 @@ pub fn save(idx: &Index) -> Result<()> {
 pub fn full_scan(cfg: &Config, disk: bool, untracked: bool) -> Index {
     let mut repos = discover::discover(cfg);
     refresh_status(&mut repos, disk, untracked);
+    sessions::attach(&mut repos);
     let t = now();
     Index {
         generated_at: t,
@@ -77,6 +78,7 @@ pub fn rediscover(cfg: &Config, previous: Option<&Index>) -> Index {
             }
         }
     }
+    sessions::attach(&mut repos);
     Index {
         generated_at: now(),
         status_at,
@@ -100,7 +102,8 @@ pub fn load_fresh(cfg: &Config, max_age_secs: u64) -> Index {
 
 pub fn load_or_scan(cfg: &Config, force: bool, disk: bool, untracked: bool) -> Result<Index> {
     if !force {
-        if let Some(idx) = load().filter(|i| i.status_at.is_some()) {
+        if let Some(mut idx) = load().filter(|i| i.status_at.is_some()) {
+            sessions::attach(&mut idx.repos);
             return Ok(idx);
         }
     }

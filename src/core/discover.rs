@@ -120,6 +120,7 @@ fn load_repo(common: &Path) -> Option<Repo> {
             prunable: !main.is_dir(),
             status: None,
             disk_bytes: None,
+            sessions: Vec::new(),
         });
     }
 
@@ -148,6 +149,7 @@ fn linked_worktree(entry: &Path) -> Option<Worktree> {
         path,
         status: None,
         disk_bytes: None,
+        sessions: Vec::new(),
     })
 }
 

@@ -74,6 +74,17 @@ pub struct Worktree {
     pub prunable:   bool,
     pub status:     Option<Status>,
     pub disk_bytes: Option<u64>,
+    #[serde(default)]
+    pub sessions:   Vec<Session>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    pub agent:          String,
+    pub id:             String,
+    #[serde(alias = "last_prompt")]
+    pub summary:        Option<String>,  // last prompt or thread title (depends on agent)
+    pub last_active_at: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -159,5 +170,9 @@ impl Worktree {
             && !self.prunable
             && self.merged()
             && self.risks(default_branch).is_empty()
+    }
+
+    pub fn last_session(&self) -> Option<&Session> {
+        self.sessions.first()
     }
 }
