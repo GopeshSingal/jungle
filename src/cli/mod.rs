@@ -171,10 +171,12 @@ pub fn run() -> Result<ExitCode> {
             output::risk(&idx);
         }
         Command::Prune { rescan, apply } => {
-            let idx = index::load_or_scan(&cfg, rescan, false, false)?;
+            let mut idx = index::load_or_scan(&cfg, rescan, false, false)?;
+            index::check_untracked(&mut idx);
             if apply {
                 return prune_apply(&cfg, &idx);
             }
+            index::save(&idx)?;
             output::prune(&idx);
         }
         Command::Resolve { query } => return resolve(&cfg, &query.join(" ")),
@@ -255,18 +257,30 @@ fn rm_worktree(cfg: &Config, query: &str, force: bool, rescan: bool) -> Result<E
 }
 
 fn prune_apply(cfg: &Config, idx: &Index) -> Result<ExitCode> {
-    let removed = rm::prune_apply(idx)?;
-    if removed.is_empty() {
-        println!("Nothing merged and clean to remove.");
-    } else {
-        for path in &removed {
-            println!("{}", path.display());
-        }
-        println!("Removed {} worktree(s).", removed.len());
-    }
+    let pruned = rm::prune_apply(idx);
+    // save before reporting, so aliases stop pointing at removed worktrees even if some failed
     let idx = index::rediscover(cfg, Some(idx));
     index::save(&idx)?;
-    Ok(ExitCode::SUCCESS)
+
+    if pruned.removed.is_empty() && pruned.failed.is_empty() {
+        println!("Nothing merged and clean to remove.");
+    } else if !pruned.removed.is_empty() {
+        for path in &pruned.removed {
+            println!("{}", path.display());
+        }
+        println!("Removed {} worktree(s).", pruned.removed.len());
+    }
+    for (home, err) in &pruned.prune_failed {
+        eprintln!("jungle: couldn't prune stale worktrees of {}: {err}", output::tilde(home));
+    }
+    if !pruned.failed.is_empty() {
+        for (path, err) in &pruned.failed {
+            eprintln!("jungle: skipped {}: {err}", output::tilde(path));
+        }
+        eprintln!("Skipped {} worktree(s). Inspect them, then use `jungle rm --force` if you're sure.", pruned.failed.len());
+    }
+    let ok = pruned.failed.is_empty() && pruned.prune_failed.is_empty();
+    Ok(if ok { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }
 
 fn with_sessions(cfg: &Config) -> Index {

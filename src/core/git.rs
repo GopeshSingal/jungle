@@ -3,7 +3,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 
-use crate::core::model::Status;
+use crate::core::model::{Merge, Status};
 
 fn command(dir: &Path, args: &[&str]) -> Command {
     let mut cmd = Command::new("git");
@@ -104,10 +104,45 @@ pub fn status(path: &Path, default_ref: Option<&str>, on_default: bool, untracke
         s.merged = if at_tip {
             None
         } else {
-            succeeds(path, &["merge-base", "--is-ancestor", "HEAD", dref])
+            match succeeds(path, &["merge-base", "--is-ancestor", "HEAD", dref]) {
+                Some(true) => Some(Merge::Ancestor),
+                Some(false) if squash_merged(path, dref) == Some(true) => Some(Merge::Squash),
+                Some(false) => Some(Merge::No),
+                None => None,
+            }
         }
     }
     Some(s)
+}
+
+fn squash_merged(path: &Path, dref: &str) -> Option<bool> {
+    let base = output(path, &["merge-base", dref, "HEAD"])?;
+    let base = base.trim();
+
+    let ours = patch_ids(path, &["diff", "--no-color", "--no-ext-diff", "--no-renames", base, "HEAD"])?;
+    let Some(ours) = ours.split_whitespace().next() else {
+        return Some(false); // the branch's commits cancel out
+    };
+
+    let names = output(path, &["diff", "--no-renames", "--name-only", "-z", base, "HEAD"])?;
+    let range = format!("{base}..{dref}");
+    let mut args = vec![
+        "--literal-pathspecs", "log", "-p", "--no-color", "--no-ext-diff", "--no-renames",
+        "--format=commit %H", &range, "--",
+    ];
+    args.extend(names.split('\0').filter(|n| !n.is_empty()));
+    let theirs = patch_ids(path, &args)?;
+
+    Some(theirs.lines().any(|l| l.split_whitespace().next() == Some(ours)))
+}
+
+// pipes `git <args>` through `git patch-id --stable`
+fn patch_ids(dir: &Path, args: &[&str]) -> Option<String> {
+    let mut src = command(dir, args).stdout(Stdio::piped()).spawn().ok()?;
+    let pipe = src.stdout.take()?;
+    let out = command(dir, &["patch-id", "--stable"]).stdin(pipe).output().ok()?;
+    let src_ok = src.wait().ok()?.success();
+    (src_ok && out.status.success()).then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 pub fn branch_exists(home: &Path, branch: &str) -> bool {

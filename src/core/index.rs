@@ -117,18 +117,34 @@ fn refresh_status(repos: &mut [Repo], disk: bool, untracked: bool) {
         let default = git::default_ref(&repo.common_dir);
         repo.default_ref = default.as_ref().map(|d| d.0.clone());
         repo.default_branch = default.map(|d| d.1);
-        let default_ref = repo.default_ref.clone();
-        let default_branch = repo.default_branch.clone();
+        let (default_ref, default_branch) = (repo.default_ref.as_deref(), repo.default_branch.as_deref());
 
         repo.worktrees.par_iter_mut().for_each(|wt| {
             if wt.prunable {
                 return;
             }
-            let on_default = default_branch.is_some() && wt.branch() == default_branch.as_deref();
-            wt.status = git::status(&wt.path, default_ref.as_deref(), on_default, untracked);
+            refresh_worktree(wt, default_ref, default_branch, untracked);
             if disk {
                 wt.disk_bytes = Some(disk::usage(&wt.path));
             }
         });
     })
+}
+
+// used to check for untracked files on would-be-removed worktrees
+pub fn check_untracked(idx: &mut Index) {
+    idx.repos.par_iter_mut().for_each(|repo| {
+        let (default_ref, default_branch) = (repo.default_ref.as_deref(), repo.default_branch.as_deref());
+        repo.worktrees.par_iter_mut().for_each(|wt| {
+            let unchecked = wt.status.as_ref().is_some_and(|s| s.untracked.is_none());
+            if unchecked && wt.removable(default_branch) {
+                refresh_worktree(wt, default_ref, default_branch, true);
+            }
+        });
+    })
+}
+
+fn refresh_worktree(wt: &mut Worktree, default_ref: Option<&str>, default_branch: Option<&str>, untracked: bool) {
+    let on_default = wt.on_default(default_branch);
+    wt.status = git::status(&wt.path, default_ref, on_default, untracked);
 }

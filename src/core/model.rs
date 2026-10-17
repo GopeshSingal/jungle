@@ -96,8 +96,16 @@ pub struct Status {
     pub behind_upstream: Option<u32>,
     pub ahead_main:      Option<u32>,
     pub behind_main:     Option<u32>,
-    pub merged:          Option<bool>,
+    pub merged:          Option<Merge>,
     pub last_commit_at:  Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Merge {
+    No,
+    Ancestor,
+    Squash,
 }
 
 // the four ways a worktree can hold work that exists nowhere else
@@ -137,8 +145,16 @@ impl Worktree {
         }
     }
 
+    pub fn on_default(&self, default_branch: Option<&str>) -> bool {
+        default_branch.is_some() && self.branch() == default_branch
+    }
+
     pub fn merged(&self) -> bool {
-        self.status.as_ref().and_then(|s| s.merged) == Some(true)
+        matches!(self.merge(), Some(Merge::Ancestor | Merge::Squash))
+    }
+
+    pub fn merge(&self) -> Option<Merge> {
+        self.status.as_ref().and_then(|s| s.merged)
     }
 
     pub fn risks(&self, default_branch: Option<&str>) -> Vec<Risk> {
@@ -155,9 +171,8 @@ impl Worktree {
         if s.ahead_upstream.unwrap_or(0) > 0 {
             risks.push(Risk::Unpushed)
         }
-        let on_default = default_branch.is_some() && self.branch() == default_branch;
         let has_own_commits = s.ahead_main.map_or(true, |n| n > 0);
-        if s.upstream.is_none() && !on_default && s.merged != Some(true) && has_own_commits {
+        if s.upstream.is_none() && !self.on_default(default_branch) && !self.merged() && has_own_commits {
             risks.push(Risk::LocalOnly);
         }
         risks

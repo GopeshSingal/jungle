@@ -57,10 +57,16 @@ fn refuse_reasons(wt: &Worktree, default_branch: Option<&str>) -> String {
     )
 }
 
-/// apply prune: remove every removable worktree, prune stale registrations.
-/// returns paths that were removed.
-pub fn prune_apply(idx: &Index) -> Result<Vec<PathBuf>> {
-    let mut removed = Vec::new();
+#[derive(Default)]
+pub struct Pruned {
+    pub removed:      Vec<PathBuf>,
+    pub failed:       Vec<(PathBuf, String)>,  // worktrees that couldn't be removed
+    pub prune_failed: Vec<(PathBuf, String)>,  // repos whose stale registrations couldn't be pruned
+}
+
+/// apply prune: remove every removable worktree, prune stale registrations
+pub fn prune_apply(idx: &Index) -> Pruned {
+    let mut out = Pruned::default();
     for repo in &idx.repos {
         let default = repo.default_branch.as_deref();
         let targets: Vec<&Worktree> = repo
@@ -69,13 +75,17 @@ pub fn prune_apply(idx: &Index) -> Result<Vec<PathBuf>> {
             .filter(|w| w.removable(default))
             .collect();
         for wt in targets {
-            remove_worktree(repo, wt, false)?;
-            removed.push(wt.path.clone());
+            match remove_worktree(repo, wt, false) {
+                Ok(())   => out.removed.push(wt.path.clone()),
+                Err(err) => out.failed.push((wt.path.clone(), err.to_string())),
+            }
         }
         let stale = repo.worktrees.iter().any(|w| w.prunable);
         if stale {
-            git::worktree_prune(&repo.home())?;
+            if let Err(err) = git::worktree_prune(&repo.home()) {
+                out.prune_failed.push((repo.home(), err.to_string()));
+            }
         }
     }
-    Ok(removed)
+    out
 }

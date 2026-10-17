@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::core::aliases::{repo_names, worktree_alias};
 use crate::core::config::home;
 use crate::core::index::now;
-use crate::core::model::{Index, Risk, Status, Worktree};
+use crate::core::model::{Index, Merge, Risk, Status, Worktree};
 
 const RECENT_SESSION_SECS: u64 = 3600;
 
@@ -162,11 +162,18 @@ pub fn prune(idx: &Index) {
         for wt in repo.worktrees.iter().filter(|w| w.removable(default)) {
             count += 1;
             let mut line = format!("git -C {at} worktree remove {}", shell_quote(&wt.path.to_string_lossy()));
+            let mut notes: Vec<String> = Vec::new();
+            if wt.merge() == Some(Merge::Squash) {
+                notes.push("squash-merged".into());
+            }
             if let Some(s) = wt.last_session() {
                 let idle = now().saturating_sub(s.last_active_at);
                 if idle < RECENT_SESSION_SECS {
-                    line.push_str(&format!("  # {} active {} ago", s.agent, age(idle)));
+                    notes.push(format!("{} active {} ago", s.agent, age(idle)));
                 }
+            }
+            if !notes.is_empty() {
+                line.push_str(&format!("  # {}", notes.join(", ")));
             }
             println!("{line}");
         }
@@ -195,8 +202,10 @@ fn state(wt: &Worktree, risks: &[Risk]) -> String {
     for r in risks {
         chips.push(paint_chip(r.chip(), color));
     }
-    if wt.merged() {
-        chips.push("merged".into());
+    match wt.merge() {
+        Some(Merge::Squash)   => chips.push("squashed".into()),
+        Some(Merge::Ancestor) => chips.push("merged".into()),
+        _                     => {}
     }
     if wt.status.is_none() && !wt.prunable {
         chips.push("?".into());
