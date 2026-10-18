@@ -16,7 +16,7 @@ pub struct Filter {
 pub fn table(idx: &Index, filter: &Filter) {
     let now = now();
     let names = repo_names(idx);
-    let mut rows: Vec<[String; 7]> = Vec::new();
+    let mut rows: Vec<[String; 8]> = Vec::new();
     for (repo, name) in idx.repos.iter().zip(&names) {
         let default = repo.default_branch.as_deref();
         for wt in &repo.worktrees {
@@ -40,6 +40,7 @@ pub fn table(idx: &Index, filter: &Filter) {
                 last,
                 wt.disk_bytes.map(bytes).unwrap_or_default(),
                 agent(wt, now),
+                note_preview(wt.note.as_deref()),
                 tilde(&wt.path),
             ]);
         }
@@ -51,7 +52,7 @@ pub fn table(idx: &Index, filter: &Filter) {
         return;
     }
     println!();
-    print_rows(["ALIAS", "STATE", "VS_MAIN", "LAST COMMIT", "DISK", "AGENT", "PATH"], &rows);
+    print_rows(["ALIAS", "STATE", "VS_MAIN", "LAST COMMIT", "DISK", "AGENT", "NOTE", "PATH"], &rows);
 }
 
 pub fn summary(idx: &Index) -> String {
@@ -351,4 +352,13 @@ pub fn shell_word(s: &str) -> String {
 
 pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+fn note_preview(note: Option<&str>) -> String {
+    let text = note.unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.chars().count() > 60 {
+        format!("{}…", text.chars().take(59).collect::<String>())
+    } else {
+        text
+    }
 }

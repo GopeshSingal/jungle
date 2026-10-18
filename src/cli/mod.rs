@@ -11,7 +11,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::core::aliases::{self, Outcome};
 use crate::core::config::{self, Config};
 use crate::core::model::{Index, Session};
-use crate::core::{index, new, rm, sessions};
+use crate::core::{index, new, notes, rm, sessions};
 
 const FRESH_SECS: u64 = 30;
 
@@ -96,6 +96,19 @@ enum Command {
         #[arg(long)]
         names: bool,
     },
+    /// save or edit a local note for the current worktree
+    #[command(long_about = "Save or edit a local note for the current worktree.\n\nWith no options, open the existing note in Git's configured editor.\nEmpty input leaves the existing note unchanged; use --clear to remove it.")]
+    Note {
+        /// replace the note without opening an editor
+        #[arg(short, long, conflicts_with_all = ["show", "clear"])]
+        message: Option<String>,
+        /// print the full note
+        #[arg(long, conflicts_with = "clear")]
+        show: bool,
+        /// remove the note
+        #[arg(long)]
+        clear: bool,
+    },
     /// list agent sessions per worktree
     Sessions {
         /// only the worktree this alias points at
@@ -159,7 +172,8 @@ pub fn run() -> Result<ExitCode> {
         } => {
             warn_if_no_roots(&cfg);
             let force = rescan || scan.disk || scan.untracked;
-            let idx = index::load_or_scan(&cfg, force, scan.disk, scan.untracked)?;
+            let mut idx = index::load_or_scan(&cfg, force, scan.disk, scan.untracked)?;
+            notes::attach(&mut idx)?;
             if json {
                 println!("{}", serde_json::to_string_pretty(&idx)?);
             } else {
@@ -198,6 +212,21 @@ pub fn run() -> Result<ExitCode> {
                 } else {
                     println!("{alias}\t{}", path.display());
                 }
+            }
+        }
+        Command::Note { message, show, clear } => {
+            let cwd = std::env::current_dir().context("reading current directory")?;
+            let path = notes::path(&cwd)?;
+            if show {
+                if let Some(note) = notes::read(&path)? {
+                    println!("{note}");
+                }
+            } else if clear {
+                notes::clear(&path)?;
+            } else if let Some(message) = message {
+                notes::save(&path, &message)?;
+            } else {
+                notes::edit(&cwd, &path)?;
             }
         }
         Command::Sessions { query } => {
