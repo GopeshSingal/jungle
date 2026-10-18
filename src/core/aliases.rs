@@ -44,16 +44,16 @@ pub fn worktree_alias(repo_name: &str, wt: &Worktree) -> String {
     }
 }
 
-// every alias -> target, prioritizing user aliases
+// listed aliases -> target, prioritizing user aliases
 pub fn all(idx: &Index, cfg: &Config) -> Vec<(String, PathBuf)> {
     let mut out = cfg.alias_paths();
     for (repo, name) in idx.repos.iter().zip(repo_names(idx)) {
         out.push((name.clone(), repo.home()));
-        for wt in repo.worktrees.iter().filter(|w| !w.prunable) {
+        for wt in repo.worktrees.iter().filter(|w| !w.is_main && !w.prunable) {
             if let Some(b) = wt.branch() {
                 out.push((format!("{name}@{b}"), wt.path.clone()));
             }
-            if !wt.is_main && wt.branch() != Some(wt.name.as_str()) {
+            if wt.branch() != Some(wt.name.as_str()) {
                 out.push((format!("{name}@{}", wt.name), wt.path.clone()));
             }
         }
