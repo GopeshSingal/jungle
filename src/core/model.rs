@@ -76,6 +76,8 @@ pub struct Worktree {
     pub disk_bytes: Option<u64>,
     #[serde(default)]
     pub sessions:   Vec<Session>,
+    #[serde(default)]
+    pub note:       Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
