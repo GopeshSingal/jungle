@@ -2,8 +2,8 @@ use std::io::{self, IsTerminal};
 use std::path::Path;
 
 use crate::core::aliases::{repo_names, worktree_alias};
-use crate::core::config::home;
-use crate::core::index::now;
+use crate::core::config::{config_path, expand, home, Config};
+use crate::core::index::{self, now};
 use crate::core::model::{Index, Merge, Risk, Status, Worktree};
 
 const RECENT_SESSION_SECS: u64 = 3600;
@@ -185,6 +185,77 @@ pub fn prune(idx: &Index) {
     }
     if count == 0 {
         println!("# Nothing merged and clean to remove.");
+    }
+}
+
+// the settings in effect and where they come from
+pub fn config(cfg: &Config) {
+    let path = config_path();
+    let source = if path.is_file() { "" } else { "  (not found, using defaults)" };
+    println!("config     {}{source}", tilde(&path));
+    println!("index      {}", tilde(&index::path()));
+    println!("max_depth  {}", cfg.max_depth);
+    println!("ignore     {}", cfg.ignore.join(" "));
+
+    println!();
+    println!("roots");
+    let roots: Vec<(String, String)> = cfg
+        .roots
+        .iter()
+        .map(|r| (r.clone(), presence(expand(r).is_dir())))
+        .collect();
+    print_pairs(&roots);
+
+    println!();
+    println!("aliases");
+    let aliases: Vec<(String, String)> = cfg
+        .alias_paths()
+        .into_iter()
+        .map(|(name, p)| {
+            let missing = if p.exists() { "" } else { "  missing" };
+            (name, format!("{}{missing}", tilde(&p)))
+        })
+        .collect();
+    print_pairs(&aliases);
+}
+
+pub fn config_json(cfg: &Config) -> serde_json::Value {
+    let path = config_path();
+    let roots: Vec<serde_json::Value> = cfg
+        .roots
+        .iter()
+        .map(|r| {
+            let p = expand(r);
+            serde_json::json!({ "root": r, "path": p, "exists": p.is_dir() })
+        })
+        .collect();
+    let aliases: Vec<serde_json::Value> = cfg
+        .alias_paths()
+        .into_iter()
+        .map(|(name, p)| serde_json::json!({ "name": name, "path": p, "exists": p.exists() }))
+        .collect();
+    serde_json::json!({
+        "config":    { "path": path, "exists": path.is_file() },
+        "index":     index::path(),
+        "max_depth": cfg.max_depth,
+        "ignore":    cfg.ignore,
+        "roots":     roots,
+        "aliases":   aliases,
+    })
+}
+
+fn presence(exists: bool) -> String {
+    if exists { "ok" } else { "missing" }.to_string()
+}
+
+fn print_pairs(pairs: &[(String, String)]) {
+    if pairs.is_empty() {
+        println!("  none");
+        return;
+    }
+    let width = pairs.iter().map(|(k, _)| k.chars().count()).max().unwrap_or(0);
+    for (k, v) in pairs {
+        println!("  {k:<width$}  {v}");
     }
 }
 

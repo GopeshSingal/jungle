@@ -129,6 +129,15 @@ enum Command {
         #[arg(long, value_parser = ["claude", "codex"])]
         agent: Option<String>,
     },
+    /// show the config file, roots, and aliases in use
+    Config {
+        /// print only the config file path
+        #[arg(long, conflicts_with = "json")]
+        path: bool,
+        /// print the settings as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// print shell integration; add `eval "$(jungle init zsh)"` to shell config
     Init {
         shell: shell::Shell,
@@ -150,6 +159,11 @@ struct ScanArgs {
 
 pub fn run() -> Result<ExitCode> {
     let cli = Cli::parse();
+    // before loading, so a config that fails to parse can still be found
+    if let Command::Config { path: true, .. } = cli.command {
+        println!("{}", config::config_path().display());
+        return Ok(ExitCode::SUCCESS);
+    }
     let cfg = Config::load()?;
     match cli.command {
         Command::Scan(args) => {
@@ -244,6 +258,13 @@ pub fn run() -> Result<ExitCode> {
             pick,
             agent,
         } => return resume(&cfg, &query.join(" "), print, pick, agent.as_deref()),
+        Command::Config { json, .. } => {
+            if json {
+                println!("{}", serde_json::to_string_pretty(&output::config_json(&cfg))?);
+            } else {
+                output::config(&cfg);
+            }
+        }
         Command::Init { shell: sh, cmd } => println!("{}", shell::init(sh, &cmd)?),
     }
     Ok(ExitCode::SUCCESS)
@@ -407,7 +428,7 @@ fn resolve(cfg: &Config, query: &str) -> Result<ExitCode> {
 fn warn_if_no_roots(cfg: &Config) {
     if cfg.root_paths().is_empty() && cfg.aliases.is_empty() {
         eprintln!(
-            "jungle: none of the configured roots exist. Set `roots` in {}",
+            "jungle: none of the configured roots exist. Run `jungle config` to check them, then set `roots` in {}",
             output::tilde(&config::config_path())
         );
     }
