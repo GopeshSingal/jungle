@@ -2,8 +2,10 @@
 name = "jungle-wt"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
 description = "git worktree management on your machine"
 license = "MIT"
+repository = "https://github.com/GopeshSingal/jungle"
 
 [[bin]]
 name = "jungle"
@@ -26,3 +28,7 @@ serde = {
 }
 serde_json = "1"
 toml = "0.8"
+
+[profile.release]
+strip = true
+lto = "thin"
