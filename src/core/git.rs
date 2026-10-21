@@ -156,22 +156,31 @@ pub fn branch_exists(home: &Path, branch: &str) -> bool {
     succeeds(home, &["rev-parse", "--verify", "-q", &r]) == Some(true)
 }
 
+// `refs/remotes/origin/<branch>` if origin has the branch
+pub fn remote_branch(home: &Path, branch: &str) -> Option<String> {
+    let r = format!("refs/remotes/origin/{branch}");
+    (succeeds(home, &["rev-parse", "--verify", "-q", &r]) == Some(true)).then_some(r)
+}
+
 pub fn worktree_add(
     home: &Path,
     path: &Path,
     branch: &str,
     create_new: bool,
     base: Option<&str>,
+    track: bool,
 ) -> Result<()> {
     let path_s = path.to_string_lossy();
     let out = if create_new {
         let base = base.context("no base ref to create the branch from (pass --base)")?;
-        command_loud(
-            home,
-            &["worktree", "add", "-b", branch, path_s.as_ref(), base],
-        )
-        .output()
-        .with_context(|| format!("running git worktree add in {}", home.display()))?
+        let mut args = vec!["worktree", "add"];
+        if track {
+            args.push("--track");
+        }
+        args.extend(["-b", branch, path_s.as_ref(), base]);
+        command_loud(home, &args)
+            .output()
+            .with_context(|| format!("running git worktree add in {}", home.display()))?
     } else {
         command_loud(home, &["worktree", "add", path_s.as_ref(), branch])
             .output()

@@ -75,7 +75,7 @@ enum Command {
         /// path for the new worktree (default: <repo>/.jungle/<branch>)
         #[arg(long)]
         path: Option<PathBuf>,
-        /// start point when creating a new branch
+        /// start point when creating a new branch (default: origin/<branch> if it exists, else the default branch)
         #[arg(long)]
         base: Option<String>,
     },

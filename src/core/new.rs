@@ -60,8 +60,14 @@ pub fn create(cfg: &Config, idx: &Index, args: Args) -> Result<PathBuf> {
     ensure_jungle_dir(&home)?;
 
     let create_new = !git::branch_exists(&home, branch);
+    // a branch that only exists on origin is checked out tracking it, unless --base says otherwise
+    let remote = match (create_new, &args.base) {
+        (true, None) => git::remote_branch(&home, branch),
+        _            => None,
+    };
+    let track = remote.is_some();
     let base = if create_new {
-        Some(match args.base {
+        Some(match args.base.or(remote) {
             Some(b) => b,
             None => {
                 let (full, _) = git::default_ref(&repo.common_dir).with_context(|| {
@@ -82,7 +88,7 @@ pub fn create(cfg: &Config, idx: &Index, args: Args) -> Result<PathBuf> {
             .with_context(|| format!("creating {}", parent.display()))?;
     }
 
-    git::worktree_add(&home, &path, branch, create_new, base.as_deref())?;
+    git::worktree_add(&home, &path, branch, create_new, base.as_deref(), track)?;
     Ok(canonical(&path))
 }
 
