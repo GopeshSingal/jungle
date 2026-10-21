@@ -6,6 +6,9 @@ rust-version = "1.85"
 description = "git worktree management on your machine"
 license = "MIT"
 repository = "https://github.com/GopeshSingal/jungle"
+keywords = ["git", "worktree", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["TODO.md", ".github/"]
 
 [[bin]]
 name = "jungle"
