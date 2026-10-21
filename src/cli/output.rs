@@ -196,6 +196,7 @@ pub fn config(cfg: &Config) {
     println!("index      {}", tilde(&index::path()));
     println!("max_depth  {}", cfg.max_depth);
     println!("ignore     {}", cfg.ignore.join(" "));
+    println!("editor     {}", cfg.editor.as_deref().unwrap_or("$VISUAL / $EDITOR"));
 
     println!();
     println!("roots");
@@ -239,6 +240,7 @@ pub fn config_json(cfg: &Config) -> serde_json::Value {
         "index":     index::path(),
         "max_depth": cfg.max_depth,
         "ignore":    cfg.ignore,
+        "editor":    cfg.editor,
         "roots":     roots,
         "aliases":   aliases,
     })

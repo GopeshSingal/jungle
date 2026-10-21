@@ -7,6 +7,7 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    pub editor:    Option<String>,
     pub roots:     Vec<String>,
     pub max_depth: usize,
     pub ignore:    Vec<String>,
@@ -16,6 +17,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            editor: None,
             roots: ["~/code", "~/work", "~/src", "~/projects"]
                 .into_iter()
                 .map(String::from)

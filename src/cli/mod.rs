@@ -67,6 +67,12 @@ enum Command {
         #[arg(required = true, num_args = 1..)]
         query: Vec<String>,
     },
+    /// open a worktree in the configured editor (or VISUAL / EDITOR)
+    Open {
+        /// alias, or `.` for the current worktree
+        #[arg(required = true, num_args = 1..)]
+        query: Vec<String>,
+    },
     /// create a linked worktree under <repo>/.jungle/
     New {
         /// `[repo] <branch>` — repo defaults to the repo containing cwd
@@ -209,6 +215,11 @@ pub fn run() -> Result<ExitCode> {
             output::prune(&idx);
         }
         Command::Resolve { query } => return resolve(&cfg, &query.join(" ")),
+        Command::Open { query } => {
+            let idx = index::load_fresh(&cfg, FRESH_SECS);
+            let path = target(&idx, &cfg, &query.join(" "))?;
+            crate::core::open::open(&cfg, &path)?;
+        }
         Command::New {
             targets,
             path,
