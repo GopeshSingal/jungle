@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
@@ -143,6 +143,12 @@ fn patch_ids(dir: &Path, args: &[&str]) -> Option<String> {
     let out = command(dir, &["patch-id", "--stable"]).stdin(pipe).output().ok()?;
     let src_ok = src.wait().ok()?.success();
     (src_ok && out.status.success()).then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+// root of the worktree containing dir
+pub fn toplevel(dir: &Path) -> Option<PathBuf> {
+    let out = output(dir, &["rev-parse", "--show-toplevel"])?;
+    Some(PathBuf::from(out.trim_end_matches(['\r', '\n'])))
 }
 
 pub fn branch_exists(home: &Path, branch: &str) -> bool {

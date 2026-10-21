@@ -11,7 +11,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::core::aliases::{self, Outcome};
 use crate::core::config::{self, Config};
 use crate::core::model::{Index, Session};
-use crate::core::{index, new, notes, rm, sessions};
+use crate::core::{git, index, new, notes, rm, sessions};
 
 const FRESH_SECS: u64 = 30;
 
@@ -111,11 +111,12 @@ enum Command {
     },
     /// list agent sessions per worktree
     Sessions {
-        /// only the worktree this alias points at
+        /// only the worktree this alias points at, or `.` for the current one
         query: Vec<String>,
     },
     /// resume the newest agent session in a worktree
     Resume {
+        /// alias, or `.` for the current worktree
         #[arg(required = true, num_args = 1..)]
         query: Vec<String>,
         /// print the command instead of running it
@@ -233,7 +234,7 @@ pub fn run() -> Result<ExitCode> {
             let idx = with_sessions(&cfg);
             let only = match query.is_empty() {
                 true  => None,
-                false => Some(aliases::resolve_one(&idx, &cfg, &query.join(" "))?),
+                false => Some(target(&idx, &cfg, &query.join(" "))?),
             };
             output::sessions(&idx, only.as_deref());
         }
@@ -318,9 +319,23 @@ fn with_sessions(cfg: &Config) -> Index {
     idx
 }
 
+// an alias, or `.` for the worktree containing cwd
+fn target(idx: &Index, cfg: &Config, query: &str) -> Result<PathBuf> {
+    if query.trim() != "." {
+        return aliases::resolve_one(idx, cfg, query);
+    }
+    let cwd = std::env::current_dir().context("reading current directory")?;
+    let top = git::toplevel(&cwd).context("not inside a git worktree")?;
+    let path = config::canonical(&top);
+    if idx.worktree_at(&path).is_none() {
+        bail!("{} isn't a known worktree; run `jungle scan`", output::tilde(&path));
+    }
+    Ok(path)
+}
+
 fn resume(cfg: &Config, query: &str, print: bool, pick: usize, agent: Option<&str>) -> Result<ExitCode> {
     let idx = with_sessions(cfg);
-    let path = aliases::resolve_one(&idx, cfg, query)?;
+    let path = target(&idx, cfg, query)?;
     let (_, wt) = idx
         .worktree_at(&path)
         .with_context(|| format!("no worktree at {}", path.display()))?;
