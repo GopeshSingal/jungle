@@ -24,6 +24,11 @@ jobs:
           tar -czf "$ARCHIVE" -C target/release jungle
           shasum -a 256 "$ARCHIVE" > "${ARCHIVE}.sha256"
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+      - name: move nightly tag
+        if: inputs.tag == 'nightly'
+        run: |
+          git tag -f nightly "$GITHUB_SHA"
+          git push -f origin refs/tags/nightly
       - name: upload release assets
         uses: softprops/action-gh-release@v2
         with:
