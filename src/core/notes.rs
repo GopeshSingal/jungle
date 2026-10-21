@@ -132,10 +132,11 @@ pub fn edit(dir: &Path, path: &Path) -> Result<()> {
 pub fn attach(idx: &mut Index) -> Result<()> {
     for repo in &mut idx.repos {
         for wt in &mut repo.worktrees {
+            // a note that can't be read shouldn't break listing the rest
             wt.note = if wt.prunable {
                 None
             } else {
-                read(&path(&wt.path)?)?
+                path(&wt.path).ok().and_then(|p| read(&p).ok().flatten())
             };
         }
     }

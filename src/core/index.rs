@@ -103,6 +103,7 @@ pub fn load_fresh(cfg: &Config, max_age_secs: u64) -> Index {
 pub fn load_or_scan(cfg: &Config, force: bool, disk: bool, untracked: bool) -> Result<Index> {
     if !force {
         if let Some(mut idx) = load().filter(|i| i.status_at.is_some()) {
+            mark_missing(&mut idx);
             sessions::attach(&mut idx.repos);
             return Ok(idx);
         }
@@ -110,6 +111,17 @@ pub fn load_or_scan(cfg: &Config, force: bool, disk: bool, untracked: bool) -> R
     let idx = full_scan(cfg, disk, untracked);
     save(&idx)?;
     Ok(idx)
+}
+
+// worktrees deleted since the last scan, marked the way discovery would
+fn mark_missing(idx: &mut Index) {
+    for wt in idx.repos.iter_mut().flat_map(|r| r.worktrees.iter_mut()) {
+        if !wt.prunable && !wt.path.is_dir() {
+            wt.prunable = true;
+            wt.status = None;
+            wt.disk_bytes = None;
+        }
+    }
 }
 
 fn refresh_status(repos: &mut [Repo], disk: bool, untracked: bool) {
