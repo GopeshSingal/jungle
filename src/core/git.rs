@@ -6,14 +6,8 @@ use anyhow::{bail, Context, Result};
 use crate::core::model::{Merge, Status};
 
 fn command(dir: &Path, args: &[&str]) -> Command {
-    let mut cmd = Command::new("git");
-    cmd.arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0")   // stops `git status` from taking `index.lock`
-        .env("GIT_TERMINAL_PROMPT", "0")  // stops git from waiting for a password
-        .stdin(Stdio::null())
-        .stderr(Stdio::null());
+    let mut cmd = command_loud(dir, args);
+    cmd.stderr(Stdio::null());
     cmd
 }
 
@@ -22,10 +16,28 @@ fn command_loud(dir: &Path, args: &[&str]) -> Command {
     cmd.arg("-C")
         .arg(dir)
         .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_OPTIONAL_LOCKS", "0")   // stops `git status` from taking `index.lock`
+        .env("GIT_TERMINAL_PROMPT", "0")  // stops git from waiting for a password
         .stdin(Stdio::null());
     cmd
+}
+
+// runs `git worktree <sub> <args>`, failing with git's stderr
+fn worktree(home: &Path, sub: &str, args: &[&str]) -> Result<()> {
+    let mut full = vec!["worktree", sub];
+    full.extend(args);
+    let out = command_loud(home, &full)
+        .output()
+        .with_context(|| format!("running git worktree {sub} in {}", home.display()))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let err = err.trim();
+    if err.is_empty() {
+        bail!("git worktree {sub} failed");
+    }
+    bail!("{err}");
 }
 
 fn output(dir: &Path, args: &[&str]) -> Option<String> {
@@ -171,65 +183,28 @@ pub fn worktree_add(
     track: bool,
 ) -> Result<()> {
     let path_s = path.to_string_lossy();
-    let out = if create_new {
-        let base = base.context("no base ref to create the branch from (pass --base)")?;
-        let mut args = vec!["worktree", "add"];
-        if track {
-            args.push("--track");
-        }
-        args.extend(["-b", branch, path_s.as_ref(), base]);
-        command_loud(home, &args)
-            .output()
-            .with_context(|| format!("running git worktree add in {}", home.display()))?
-    } else {
-        command_loud(home, &["worktree", "add", path_s.as_ref(), branch])
-            .output()
-            .with_context(|| format!("running git worktree add in {}", home.display()))?
-    };
-    if out.status.success() {
-        return Ok(());
+    if !create_new {
+        return worktree(home, "add", &[path_s.as_ref(), branch]);
     }
-    let err = String::from_utf8_lossy(&out.stderr);
-    let err = err.trim();
-    if err.is_empty() {
-        bail!("git worktree add failed");
+    let base = base.context("no base ref to create the branch from (pass --base)")?;
+    let mut args = Vec::new();
+    if track {
+        args.push("--track");
     }
-    bail!("{err}");
+    args.extend(["-b", branch, path_s.as_ref(), base]);
+    worktree(home, "add", &args)
 }
 
 pub fn worktree_remove(home: &Path, path: &Path, force: bool) -> Result<()> {
     let path_s = path.to_string_lossy();
-    let out = if force {
-        command_loud(home, &["worktree", "remove", "--force", path_s.as_ref()])
-            .output()
-            .with_context(|| format!("running git worktree remove in {}", home.display()))?
-    } else {
-        command_loud(home, &["worktree", "remove", path_s.as_ref()])
-            .output()
-            .with_context(|| format!("running git worktree remove in {}", home.display()))?
-    };
-    if out.status.success() {
-        return Ok(());
+    let mut args = Vec::new();
+    if force {
+        args.push("--force");
     }
-    let err = String::from_utf8_lossy(&out.stderr);
-    let err = err.trim();
-    if err.is_empty() {
-        bail!("git worktree remove failed");
-    }
-    bail!("{err}");
+    args.push(path_s.as_ref());
+    worktree(home, "remove", &args)
 }
 
 pub fn worktree_prune(home: &Path) -> Result<()> {
-    let out = command_loud(home, &["worktree", "prune"])
-        .output()
-        .with_context(|| format!("running git worktree prune in {}", home.display()))?;
-    if out.status.success() {
-        return Ok(());
-    }
-    let err = String::from_utf8_lossy(&out.stderr);
-    let err = err.trim();
-    if err.is_empty() {
-        bail!("git worktree prune failed");
-    }
-    bail!("{err}");
+    worktree(home, "prune", &[])
 }
