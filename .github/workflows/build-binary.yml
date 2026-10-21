@@ -36,4 +36,5 @@ jobs:
           files: |
             ${{ env.ARCHIVE }}
             ${{ env.ARCHIVE }}.sha256
-          generate_release_notes: true
+          body: ${{ inputs.tag == 'nightly' && format('Rolling build of `main` at {0}.', github.sha) || '' }}
+          generate_release_notes: ${{ inputs.tag != 'nightly' }}
