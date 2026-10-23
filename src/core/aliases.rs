@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use anyhow::{bail, Result};
@@ -34,7 +34,10 @@ pub fn repo_names(idx: &Index) -> Vec<String> {
     .collect()
 }
 
-pub fn worktree_alias(repo_name: &str, wt: &Worktree) -> String {
+pub fn worktree_alias(repo_name: &str, wt: &Worktree, cfg: &Config) -> String {
+    if let Some((name, _)) = cfg.alias_paths().into_iter().find(|(_, path)| *path == wt.path) {
+        return name;
+    }
     if wt.is_main {
         return repo_name.to_string();
     }
@@ -47,17 +50,21 @@ pub fn worktree_alias(repo_name: &str, wt: &Worktree) -> String {
 // listed aliases -> target, prioritizing user aliases
 pub fn all(idx: &Index, cfg: &Config) -> Vec<(String, PathBuf)> {
     let mut out = cfg.alias_paths();
+    let custom_paths: HashSet<_> = out.iter().map(|(_, path)| path.clone()).collect();
+    let custom_names: HashSet<_> = out.iter().map(|(name, _)| name.clone()).collect();
+    let mut generated = Vec::new();
     for (repo, name) in idx.repos.iter().zip(repo_names(idx)) {
-        out.push((name.clone(), repo.home()));
+        generated.push((name.clone(), repo.home()));
         for wt in repo.worktrees.iter().filter(|w| !w.is_main && !w.prunable) {
             if let Some(b) = wt.branch() {
-                out.push((format!("{name}@{b}"), wt.path.clone()));
+                generated.push((format!("{name}@{b}"), wt.path.clone()));
             }
             if wt.branch() != Some(wt.name.as_str()) {
-                out.push((format!("{name}@{}", wt.name), wt.path.clone()));
+                generated.push((format!("{name}@{}", wt.name), wt.path.clone()));
             }
         }
     }
+    out.extend(generated.into_iter().filter(|(name, path)| !custom_paths.contains(path) && !custom_names.contains(name)));
     out
 }
 
@@ -65,6 +72,10 @@ pub fn resolve(idx: &Index, cfg: &Config, query: &str) -> Outcome {
     let q = query.trim();
     if q.is_empty() {
         return Outcome::NotFound;
+    }
+
+    if let Some((_, path)) = cfg.alias_paths().into_iter().find(|(name, _)| name == q) {
+        return Outcome::Found(path);
     }
 
     // split on the first `@`
@@ -88,7 +99,7 @@ pub fn resolve(idx: &Index, cfg: &Config, query: &str) -> Outcome {
                 .iter()
                 .filter(|w| !w.is_main && !w.prunable)
                 .filter(move |w| w.branch() == Some(q) || w.name == q)
-                .map(move |w| (worktree_alias(name, w), w.path.clone()))
+                .map(move |w| (worktree_alias(name, w, cfg), w.path.clone()))
         })
         .collect();
     match by_branch.len() {

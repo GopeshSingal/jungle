@@ -96,6 +96,18 @@ enum Command {
         #[arg(long)]
         rescan: bool,
     },
+    /// create or update a custom alias in the config
+    Alias {
+        /// shortcut name
+        name: String,
+        /// target directory (defaults to the current directory)
+        path: Option<PathBuf>,
+    },
+    /// remove a custom alias from the config
+    Unalias {
+        /// custom alias name
+        name: String,
+    },
     /// list every alias and its path
     Aliases {
         /// names only
@@ -198,12 +210,12 @@ pub fn run() -> Result<ExitCode> {
             if json {
                 println!("{}", serde_json::to_string_pretty(&idx)?);
             } else {
-                output::table(&idx, &output::Filter { merged, risk });
+                output::table(&idx, &output::Filter { merged, risk }, &cfg);
             }
         }
         Command::Risk { rescan } => {
             let idx = index::load_or_scan(&cfg, rescan, false, false)?;
-            output::risk(&idx);
+            output::risk(&idx, &cfg);
         }
         Command::Prune { rescan, apply } => {
             let mut idx = index::load_or_scan(&cfg, rescan, false, false)?;
@@ -230,14 +242,24 @@ pub fn run() -> Result<ExitCode> {
             force,
             rescan,
         } => return rm_worktree(&cfg, &query.join(" "), force, rescan),
+        Command::Alias { name, path } => {
+            let path = path.unwrap_or(std::env::current_dir().context("reading current directory")?);
+            let path = config::set_alias(&name, &path)?;
+            println!("{name}\t{}", path.display());
+        }
+        Command::Unalias { name } => {
+            config::remove_alias(&name)?;
+            println!("removed alias {name}");
+        }
         Command::Aliases { names } => {
             let idx = index::load_fresh(&cfg, FRESH_SECS);
-            for (alias, path) in aliases::all(&idx, &cfg) {
-                if names {
+            let entries = aliases::all(&idx, &cfg);
+            if names {
+                for (alias, _) in entries {
                     println!("{alias}");
-                } else {
-                    println!("{alias}\t{}", path.display());
                 }
+            } else {
+                output::aliases(&entries, &cfg);
             }
         }
         Command::Note { message, show, clear } => {
@@ -261,7 +283,7 @@ pub fn run() -> Result<ExitCode> {
                 true  => None,
                 false => Some(target(&idx, &cfg, &query.join(" "))?),
             };
-            output::sessions(&idx, only.as_deref());
+            output::sessions(&idx, only.as_deref(), &cfg);
         }
         Command::Resume {
             query,

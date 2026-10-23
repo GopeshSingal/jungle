@@ -13,7 +13,7 @@ pub struct Filter {
     pub risk:   bool,
 }
 
-pub fn table(idx: &Index, filter: &Filter) {
+pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
     let now = now();
     let names = repo_names(idx);
     let mut rows: Vec<[String; 8]> = Vec::new();
@@ -34,7 +34,7 @@ pub fn table(idx: &Index, filter: &Filter) {
                 .map(|t| format!("{} ago", age(now.saturating_sub(t))))
                 .unwrap_or_default();
             rows.push([
-                worktree_alias(name, wt),
+                worktree_alias(name, wt, cfg),
                 state(wt, &risks),
                 vs_main(wt),
                 last,
@@ -92,7 +92,7 @@ pub fn summary(idx: &Index) -> String {
     line
 }
 
-pub fn risk(idx: &Index) {
+pub fn risk(idx: &Index, cfg: &Config) {
     let names = repo_names(idx);
     let mut count = 0;
     let mut checked_untracked = false;
@@ -107,7 +107,7 @@ pub fn risk(idx: &Index) {
                 continue;
             }
             count += 1;
-            println!("{}  {}", worktree_alias(name, wt), tilde(&wt.path));
+            println!("{}  {}", worktree_alias(name, wt, cfg), tilde(&wt.path));
             for r in risks {
                 println!("    {}", r.describe());
             }
@@ -125,7 +125,7 @@ pub fn risk(idx: &Index) {
 }
 
 // agent sessions per worktree
-pub fn sessions(idx: &Index, only: Option<&Path>) {
+pub fn sessions(idx: &Index, only: Option<&Path>, cfg: &Config) {
     let now = now();
     let names = repo_names(idx);
     let mut count = 0;
@@ -134,7 +134,7 @@ pub fn sessions(idx: &Index, only: Option<&Path>) {
             if wt.sessions.is_empty() || only.is_some_and(|p| p != wt.path) {
                 continue;
             }
-            println!("{}  {}", worktree_alias(name, wt), tilde(&wt.path));
+            println!("{}  {}", worktree_alias(name, wt, cfg), tilde(&wt.path));
             for s in &wt.sessions {
                 count += 1;
                 let ago = format!("{} ago", age(now.saturating_sub(s.last_active_at)));
@@ -258,6 +258,30 @@ fn print_pairs(pairs: &[(String, String)]) {
     let width = pairs.iter().map(|(k, _)| k.chars().count()).max().unwrap_or(0);
     for (k, v) in pairs {
         println!("  {k:<width$}  {v}");
+    }
+}
+
+pub fn aliases(entries: &[(String, std::path::PathBuf)], cfg: &Config) {
+    if !io::stdout().is_terminal() {
+        for (name, path) in entries {
+            println!("{name}\t{}", path.display());
+        }
+        return;
+    }
+    let color = use_color();
+    let rows: Vec<[String; 2]> = entries.iter().map(|(name, path)| {
+        let name = alias_label(name, cfg.aliases.contains_key(name), color);
+        [name, tilde(path)]
+    }).collect();
+    print_rows(["ALIAS", "PATH"], &rows);
+}
+
+fn alias_label(name: &str, custom: bool, color: bool) -> String {
+    if color {
+        let code = if custom { 32 } else { 34 };
+        format!("\x1b[{code}m{name}\x1b[0m")
+    } else {
+        name.to_string()
     }
 }
 
