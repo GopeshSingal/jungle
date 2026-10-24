@@ -69,8 +69,8 @@ enum Command {
     },
     /// open a worktree in the configured editor (or VISUAL / EDITOR)
     Open {
-        /// alias, or `.` for the current worktree
-        #[arg(required = true, num_args = 1..)]
+        /// alias (defaults to `.` for the current worktree)
+        #[arg(default_value = ".", num_args = 1..)]
         query: Vec<String>,
     },
     /// create a linked worktree under <repo>/.jungle/
@@ -134,8 +134,8 @@ enum Command {
     },
     /// resume the newest agent session in a worktree
     Resume {
-        /// alias, or `.` for the current worktree
-        #[arg(required = true, num_args = 1..)]
+        /// alias (defaults to `.` for the current worktree)
+        #[arg(default_value = ".", num_args = 1..)]
         query: Vec<String>,
         /// print the command instead of running it
         #[arg(long)]
