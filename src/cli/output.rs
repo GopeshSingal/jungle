@@ -134,21 +134,27 @@ pub fn sessions(idx: &Index, only: Option<&Path>, cfg: &Config) {
             if wt.sessions.is_empty() || only.is_some_and(|p| p != wt.path) {
                 continue;
             }
+            if count > 0 {
+                println!();
+            }
             println!("{}  {}", worktree_alias(name, wt, cfg), tilde(&wt.path));
-            for s in &wt.sessions {
+            let mut rows = Vec::new();
+            for (i, s) in wt.sessions.iter().enumerate() {
                 count += 1;
                 let ago = format!("{} ago", age(now.saturating_sub(s.last_active_at)));
                 let id: String = s.id.chars().take(8).collect();
-                let prompt = s.summary.as_deref().map(|p| clip(p, 70)).unwrap_or_default();
-                println!("   {ago:<8} {} {id}  {prompt}", s.agent);
+                let brief = s.summary.as_deref().unwrap_or_default()
+                    .split_whitespace().collect::<Vec<_>>().join(" ");
+                rows.push([(i + 1).to_string(), ago, s.agent.to_string(), id, clip(&brief, 70)]);
             }
+            print_rows(["#", "LAST ACTIVE", "AGENT", "SESSION", "BRIEF"], &rows);
         }
     }
     if count == 0 {
         println!("no agent sessions found");
     } else {
         println!();
-        println!("resume the newest with `jungle resume <alias>`");
+        println!("resume with `jungle resume <alias> --pick <number>` (defaults to 1)");
     }
 }
 
