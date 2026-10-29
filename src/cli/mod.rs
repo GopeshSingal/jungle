@@ -40,6 +40,9 @@ enum Command {
         /// print the index as JSON
         #[arg(long)]
         json: bool,
+        /// only this repository (use parent/name to distinguish duplicate names)
+        #[arg(long, value_name = "NAME")]
+        repo: Option<String>,
         /// only merged worktrees
         #[arg(long)]
         merged: bool,
@@ -200,6 +203,7 @@ pub fn run() -> Result<ExitCode> {
             scan,
             rescan,
             json,
+            repo,
             merged,
             risk,
         } => {
@@ -207,7 +211,7 @@ pub fn run() -> Result<ExitCode> {
             let force = rescan || scan.disk || scan.untracked;
             let mut idx = index::load_or_scan(&cfg, force, scan.disk, scan.untracked)?;
             notes::attach(&mut idx)?;
-            let filter = output::Filter { merged, risk };
+            let filter = output::Filter { repo, merged, risk };
             if json {
                 println!("{}", serde_json::to_string_pretty(&output::filtered_index(&idx, &filter))?);
             } else {

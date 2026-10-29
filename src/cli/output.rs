@@ -9,22 +9,35 @@ use crate::core::model::{Index, Merge, Risk, Status, Worktree};
 const RECENT_SESSION_SECS: u64 = 3600;
 
 pub struct Filter {
+    pub repo:   Option<String>,
     pub merged: bool,
     pub risk:   bool,
 }
 
 impl Filter {
+    fn matches_repo(&self, repo: &crate::core::model::Repo, name: &str) -> bool {
+        self.repo.as_deref().is_none_or(|query| query == repo.name || query == name)
+    }
+
     fn matches(&self, wt: &Worktree, risks: &[Risk]) -> bool {
         (!self.merged || wt.merged()) && (!self.risk || !risks.is_empty())
     }
 }
 
 pub fn filtered_index(idx: &Index, filter: &Filter) -> Index {
-    let mut idx = idx.clone();
+    let mut idx = repo_index(idx, filter);
     for repo in &mut idx.repos {
         let default = repo.default_branch.as_deref();
         repo.worktrees.retain(|wt| filter.matches(wt, &wt.risks(default)));
     }
+    idx
+}
+
+fn repo_index(idx: &Index, filter: &Filter) -> Index {
+    let names = repo_names(idx);
+    let mut idx = idx.clone();
+    let mut names = names.into_iter();
+    idx.repos.retain(|repo| filter.matches_repo(repo, &names.next().unwrap()));
     idx
 }
 
@@ -33,6 +46,9 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
     let names = repo_names(idx);
     let mut rows: Vec<[String; 8]> = Vec::new();
     for (repo, name) in idx.repos.iter().zip(&names) {
+        if !filter.matches_repo(repo, name) {
+            continue;
+        }
         let default = repo.default_branch.as_deref();
         for wt in &repo.worktrees {
             let risks = wt.risks(default);
@@ -58,7 +74,7 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
         }
     }
 
-    println!("{}", summary(idx));
+    println!("{}", summary(&repo_index(idx, filter)));
     if rows.is_empty() {
         println!("No worktrees match.");
         return;
