@@ -13,6 +13,21 @@ pub struct Filter {
     pub risk:   bool,
 }
 
+impl Filter {
+    fn matches(&self, wt: &Worktree, risks: &[Risk]) -> bool {
+        (!self.merged || wt.merged()) && (!self.risk || !risks.is_empty())
+    }
+}
+
+pub fn filtered_index(idx: &Index, filter: &Filter) -> Index {
+    let mut idx = idx.clone();
+    for repo in &mut idx.repos {
+        let default = repo.default_branch.as_deref();
+        repo.worktrees.retain(|wt| filter.matches(wt, &wt.risks(default)));
+    }
+    idx
+}
+
 pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
     let now = now();
     let names = repo_names(idx);
@@ -21,10 +36,7 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
         let default = repo.default_branch.as_deref();
         for wt in &repo.worktrees {
             let risks = wt.risks(default);
-            if filter.merged && !wt.merged() {
-                continue;
-            }
-            if filter.risk && risks.is_empty() {
+            if !filter.matches(wt, &risks) {
                 continue;
             }
             let last = wt.
@@ -465,3 +477,4 @@ fn note_preview(note: Option<&str>) -> String {
         text
     }
 }
+

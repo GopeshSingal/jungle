@@ -207,10 +207,11 @@ pub fn run() -> Result<ExitCode> {
             let force = rescan || scan.disk || scan.untracked;
             let mut idx = index::load_or_scan(&cfg, force, scan.disk, scan.untracked)?;
             notes::attach(&mut idx)?;
+            let filter = output::Filter { merged, risk };
             if json {
-                println!("{}", serde_json::to_string_pretty(&idx)?);
+                println!("{}", serde_json::to_string_pretty(&output::filtered_index(&idx, &filter))?);
             } else {
-                output::table(&idx, &output::Filter { merged, risk }, &cfg);
+                output::table(&idx, &filter, &cfg);
             }
         }
         Command::Risk { rescan } => {
