@@ -43,6 +43,10 @@ fn repo_index(idx: &Index, filter: &Filter) -> Index {
 
 pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
     let now = now();
+    let current = std::env::current_dir().ok()
+        .and_then(|cwd| crate::core::git::toplevel(&cwd))
+        .map(|path| crate::core::config::canonical(&path));
+    let color = use_color();
     let names = repo_names(idx);
     let mut rows: Vec<[String; 8]> = Vec::new();
     for (repo, name) in idx.repos.iter().zip(&names) {
@@ -61,8 +65,15 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
                 .and_then(|s| s.last_commit_at)
                 .map(|t| format!("{} ago", age(now.saturating_sub(t))))
                 .unwrap_or_default();
+            let alias = worktree_alias(name, wt, cfg);
+            let alias = if current.as_deref() == Some(crate::core::config::canonical(&wt.path).as_path()) {
+                let marked = format!("* {alias}");
+                if color { format!("\x1b[1;36m{marked}\x1b[0m") } else { marked }
+            } else {
+                format!("  {alias}")
+            };
             rows.push([
-                worktree_alias(name, wt, cfg),
+                alias,
                 state(wt, &risks),
                 vs_main(wt),
                 last,
