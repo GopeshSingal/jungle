@@ -1,5 +1,6 @@
 pub mod output;
 pub mod shell;
+mod sort;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -49,6 +50,12 @@ enum Command {
         /// only worktrees with risky work
         #[arg(long)]
         risk: bool,
+        /// sort worktrees across repositories (JSON keeps repository groups)
+        #[arg(long, value_enum)]
+        sort: Option<sort::SortKey>,
+        /// reverse the sort order (missing values stay last)
+        #[arg(short = 'r', long, requires = "sort")]
+        reverse: bool,
     },
     /// list work that only exists on this machine
     Risk {
@@ -170,10 +177,10 @@ enum Command {
 
 #[derive(Args, Clone, Copy)]
 struct ScanArgs {
-    // measure disk usage per worktree (slow on large worktrees)
+    /// measure disk usage per worktree (slow on large worktrees)
     #[arg(long)]
     disk: bool,
-    // check for untracked files
+    /// check for untracked files
     #[arg(long)]
     untracked: bool,
 }
@@ -206,16 +213,23 @@ pub fn run() -> Result<ExitCode> {
             repo,
             merged,
             risk,
+            sort,
+            reverse,
         } => {
             warn_if_no_roots(&cfg);
-            let force = rescan || scan.disk || scan.untracked;
-            let mut idx = index::load_or_scan(&cfg, force, scan.disk, scan.untracked)?;
+            let disk = scan.disk || matches!(sort, Some(sort::SortKey::Disk));
+            let force = rescan || disk || scan.untracked;
+            let mut idx = index::load_or_scan(&cfg, force, disk, scan.untracked)?;
             notes::attach(&mut idx)?;
             let filter = output::Filter { repo, merged, risk };
             if json {
-                println!("{}", serde_json::to_string_pretty(&output::filtered_index(&idx, &filter))?);
+                let mut filtered = output::filtered_index(&idx, &filter);
+                if let Some(key) = sort {
+                    sort::sort_index(&mut filtered, key, reverse);
+                }
+                println!("{}", serde_json::to_string_pretty(&filtered)?);
             } else {
-                output::table(&idx, &filter, &cfg);
+                output::table(&idx, &filter, &cfg, sort, reverse);
             }
         }
         Command::Risk { rescan } => {

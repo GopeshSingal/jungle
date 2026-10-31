@@ -6,6 +6,8 @@ use crate::core::config::{config_path, expand, home, Config};
 use crate::core::index::{self, now};
 use crate::core::model::{Index, Merge, Risk, Status, Worktree};
 
+use super::sort::{compare_worktrees, SortKey};
+
 const RECENT_SESSION_SECS: u64 = 3600;
 
 pub struct Filter {
@@ -41,14 +43,14 @@ fn repo_index(idx: &Index, filter: &Filter) -> Index {
     idx
 }
 
-pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
+pub fn table(idx: &Index, filter: &Filter, cfg: &Config, sort: Option<SortKey>, reverse: bool) {
     let now = now();
     let current = std::env::current_dir().ok()
         .and_then(|cwd| crate::core::git::toplevel(&cwd))
         .map(|path| crate::core::config::canonical(&path));
     let color = use_color();
     let names = repo_names(idx);
-    let mut rows: Vec<[String; 8]> = Vec::new();
+    let mut rows = Vec::new();
     for (repo, name) in idx.repos.iter().zip(&names) {
         if !filter.matches_repo(repo, name) {
             continue;
@@ -72,7 +74,7 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
             } else {
                 format!("  {alias}")
             };
-            rows.push([
+            rows.push((wt, [
                 alias,
                 state(wt, &risks),
                 vs_main(wt),
@@ -81,9 +83,14 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config) {
                 agent(wt, now),
                 note_preview(wt.note.as_deref()),
                 tilde(&wt.path),
-            ]);
+            ]));
         }
     }
+
+    if let Some(key) = sort {
+        rows.sort_by(|(a, _), (b, _)| compare_worktrees(a, b, key, reverse));
+    }
+    let rows: Vec<_> = rows.into_iter().map(|(_, row)| row).collect();
 
     println!("{}", summary(&repo_index(idx, filter)));
     if rows.is_empty() {
@@ -504,4 +511,3 @@ fn note_preview(note: Option<&str>) -> String {
         text
     }
 }
-
