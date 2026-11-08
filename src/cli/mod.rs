@@ -124,9 +124,12 @@ enum Command {
         #[arg(long)]
         names: bool,
     },
-    /// save or edit a local note for the current worktree
-    #[command(long_about = "Save or edit a local note for the current worktree.\n\nWith no options, open the existing note in Git's configured editor.\nEmpty input leaves the existing note unchanged; use --clear to remove it.")]
+    /// save or edit a local note for a worktree
+    #[command(long_about = "Save or edit a local note for a worktree (defaults to the current one).\n\nWith no options, open the existing note in Git's configured editor.\nEmpty input leaves the existing note unchanged; use --clear to remove it.")]
     Note {
+        /// alias, or `.` for the current worktree
+        #[arg(default_value = ".", num_args = 1..)]
+        query: Vec<String>,
         /// replace the note without opening an editor
         #[arg(short, long, conflicts_with_all = ["show", "clear"])]
         message: Option<String>,
@@ -281,9 +284,15 @@ pub fn run() -> Result<ExitCode> {
                 output::aliases(&entries, &cfg);
             }
         }
-        Command::Note { message, show, clear } => {
-            let cwd = std::env::current_dir().context("reading current directory")?;
-            let path = notes::path(&cwd)?;
+        Command::Note { query, message, show, clear } => {
+            let query = query.join(" ");
+            let dir = if query.trim() == "." {
+                std::env::current_dir().context("reading current directory")?
+            } else {
+                let idx = index::load_fresh(&cfg, FRESH_SECS);
+                target(&idx, &cfg, &query)?
+            };
+            let path = notes::path(&dir)?;
             if show {
                 if let Some(note) = notes::read(&path)? {
                     println!("{note}");
@@ -293,7 +302,7 @@ pub fn run() -> Result<ExitCode> {
             } else if let Some(message) = message {
                 notes::save(&path, &message)?;
             } else {
-                notes::edit(&cwd, &path)?;
+                notes::edit(&dir, &path)?;
             }
         }
         Command::Sessions { query } => {
