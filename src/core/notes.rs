@@ -6,15 +6,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{bail, Context, Result};
 
-use crate::core::model::Index;
-
 fn git(dir: &Path, args: &[&str]) -> Result<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(dir)
         .args(args)
         .output()
-        .context("running git to resolve worktree note settings")?;
+        .context("running git to resolve worktree settings")?;
     if !output.status.success() {
         bail!(
             "{}: {}",
@@ -28,6 +26,10 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
 }
 
 pub fn path(dir: &Path) -> Result<PathBuf> {
+    worktree_file(dir, "jungle-note")
+}
+
+pub(super) fn worktree_file(dir: &Path, filename: &str) -> Result<PathBuf> {
     let output = git(
         dir,
         &[
@@ -35,12 +37,12 @@ pub fn path(dir: &Path) -> Result<PathBuf> {
             "--is-inside-work-tree",
             "--path-format=absolute",
             "--git-path",
-            "jungle-note",
+            filename,
         ],
     )?;
     let (inside, path) = output
         .split_once('\n')
-        .context("missing note path from git")?;
+        .context("missing worktree metadata path from git")?;
     if inside != "true" {
         bail!("not inside a git working tree");
     }
@@ -51,7 +53,7 @@ pub fn read(path: &Path) -> Result<Option<String>> {
     match fs::read_to_string(path) {
         Ok(text) => Ok(Some(text)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e).with_context(|| format!("reading note {}", path.display())),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
     }
 }
 
@@ -63,14 +65,14 @@ pub fn clear(path: &Path) -> Result<()> {
     }
 }
 
-struct Draft(PathBuf);
+pub(super) struct Draft(PathBuf);
 
 impl Draft {
-    fn create(path: &Path) -> Result<Self> {
+    pub(super) fn create(path: &Path) -> Result<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         loop {
             let candidate = path.with_file_name(format!(
-                "jungle-note-{}-{}.tmp",
+                "jungle-draft-{}-{}.tmp",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
@@ -94,8 +96,29 @@ impl Draft {
         if text.is_empty() {
             bail!("empty note; existing note unchanged (use --clear to remove it)");
         }
-        fs::write(&self.0, text).context("writing note draft")?;
-        fs::rename(&self.0, path).with_context(|| format!("saving note {}", path.display()))
+        self.replace(path, text)
+    }
+
+    pub(super) fn replace(self, path: &Path, text: &str) -> Result<()> {
+        fs::write(&self.0, text).context("writing draft")?;
+        fs::rename(&self.0, path).with_context(|| format!("saving {}", path.display()))
+    }
+
+    pub(super) fn edit(&self, dir: &Path, initial: &str) -> Result<String> {
+        let editor = git(dir, &["var", "GIT_EDITOR"])?;
+        fs::write(&self.0, initial).context("writing editor draft")?;
+        let status = Command::new("sh")
+            .arg("-c")
+            .arg(format!("{editor} \"$@\""))
+            .arg("jungle-editor")
+            .arg(&self.0)
+            .current_dir(dir)
+            .status()
+            .with_context(|| format!("opening editor {editor}"))?;
+        if !status.success() {
+            bail!("editor failed ({status})");
+        }
+        fs::read_to_string(&self.0).context("reading editor draft")
     }
 }
 
@@ -110,35 +133,8 @@ pub fn save(path: &Path, text: &str) -> Result<()> {
 }
 
 pub fn edit(dir: &Path, path: &Path) -> Result<()> {
-    let editor = git(dir, &["var", "GIT_EDITOR"])?;
     let existing = read(path)?.unwrap_or_default();
     let draft = Draft::create(path)?;
-    fs::write(&draft.0, existing).context("writing note draft")?;
-    let status = Command::new("sh")
-        .arg("-c")
-        .arg(format!("{editor} \"$@\""))
-        .arg("jungle-note")
-        .arg(&draft.0)
-        .current_dir(dir)
-        .status()
-        .with_context(|| format!("opening note editor {editor}"))?;
-    if !status.success() {
-        bail!("note editor failed ({status}); existing note unchanged");
-    }
-    let text = fs::read_to_string(&draft.0).context("reading edited note")?;
+    let text = draft.edit(dir, &existing)?;
     draft.save(path, &text)
-}
-
-pub fn attach(idx: &mut Index) -> Result<()> {
-    for repo in &mut idx.repos {
-        for wt in &mut repo.worktrees {
-            // a note that can't be read shouldn't break listing the rest
-            wt.note = if wt.prunable {
-                None
-            } else {
-                path(&wt.path).ok().and_then(|p| read(&p).ok().flatten())
-            };
-        }
-    }
-    Ok(())
 }

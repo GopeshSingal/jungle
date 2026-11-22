@@ -122,6 +122,7 @@ fn load_repo(common: &Path) -> Option<Repo> {
             disk_bytes: None,
             sessions: Vec::new(),
             note: None,
+            handoff: None,
         });
     }
 
@@ -152,6 +153,7 @@ fn linked_worktree(entry: &Path) -> Option<Worktree> {
         disk_bytes: None,
         sessions: Vec::new(),
         note: None,
+        handoff: None,
     })
 }
 

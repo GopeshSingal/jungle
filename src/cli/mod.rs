@@ -2,6 +2,7 @@ pub mod output;
 pub mod shell;
 mod sort;
 
+use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
@@ -12,7 +13,7 @@ use clap::{Args, Parser, Subcommand};
 use crate::core::aliases::{self, Outcome};
 use crate::core::config::{self, Config};
 use crate::core::model::{Index, Session};
-use crate::core::{git, index, new, notes, rm, sessions};
+use crate::core::{git, handoff, index, new, notes, rm, sessions};
 
 const FRESH_SECS: u64 = 30;
 
@@ -50,6 +51,9 @@ enum Command {
         /// only worktrees with risky work
         #[arg(long)]
         risk: bool,
+        /// only worktrees with a saved handoff
+        #[arg(long)]
+        handoff: bool,
         /// sort worktrees across repositories (JSON keeps repository groups)
         #[arg(long, value_enum)]
         sort: Option<sort::SortKey>,
@@ -140,6 +144,18 @@ enum Command {
         #[arg(long)]
         clear: bool,
     },
+    /// save or show the current handoff for a worktree
+    Handoff {
+        /// alias, or `.` for the current worktree
+        #[arg(default_value = ".", num_args = 1..)]
+        query: Vec<String>,
+        /// read Markdown starting with a ## Next heading from stdin
+        #[arg(long, conflicts_with = "show")]
+        stdin: bool,
+        /// print the saved handoff as Markdown
+        #[arg(long)]
+        show: bool,
+    },
     /// list agent sessions per worktree
     Sessions {
         /// only the worktree this alias points at, or `.` for the current one
@@ -216,6 +232,7 @@ pub fn run() -> Result<ExitCode> {
             repo,
             merged,
             risk,
+            handoff,
             sort,
             reverse,
         } => {
@@ -223,8 +240,8 @@ pub fn run() -> Result<ExitCode> {
             let disk = scan.disk || matches!(sort, Some(sort::SortKey::Disk));
             let force = rescan || disk || scan.untracked;
             let mut idx = index::load_or_scan(&cfg, force, disk, scan.untracked)?;
-            notes::attach(&mut idx)?;
-            let filter = output::Filter { repo, merged, risk };
+            handoff::attach_metadata(&mut idx);
+            let filter = output::Filter { repo, merged, risk, handoff };
             if json {
                 let mut filtered = output::filtered_index(&idx, &filter);
                 if let Some(key) = sort {
@@ -285,13 +302,7 @@ pub fn run() -> Result<ExitCode> {
             }
         }
         Command::Note { query, message, show, clear } => {
-            let query = query.join(" ");
-            let dir = if query.trim() == "." {
-                std::env::current_dir().context("reading current directory")?
-            } else {
-                let idx = index::load_fresh(&cfg, FRESH_SECS);
-                target(&idx, &cfg, &query)?
-            };
+            let dir = metadata_target(&cfg, &query.join(" "))?;
             let path = notes::path(&dir)?;
             if show {
                 if let Some(note) = notes::read(&path)? {
@@ -303,6 +314,20 @@ pub fn run() -> Result<ExitCode> {
                 notes::save(&path, &message)?;
             } else {
                 notes::edit(&dir, &path)?;
+            }
+        }
+        Command::Handoff { query, stdin, show } => {
+            let dir = metadata_target(&cfg, &query.join(" "))?;
+            let path = handoff::path(&dir)?;
+            if show {
+                let saved = handoff::read(&path)?.context("no handoff saved for this worktree")?;
+                output::handoff(&saved, handoff::head(&dir)?.as_deref());
+            } else if stdin {
+                let mut markdown = String::new();
+                io::stdin().read_to_string(&mut markdown).context("reading handoff from stdin")?;
+                handoff::save_text(&dir, &path, &markdown)?;
+            } else {
+                handoff::edit(&dir, &path)?;
             }
         }
         Command::Sessions { query } => {
@@ -402,6 +427,15 @@ fn with_sessions(cfg: &Config) -> Index {
 }
 
 // an alias, or `.` for the worktree containing cwd
+fn metadata_target(cfg: &Config, query: &str) -> Result<PathBuf> {
+    if query.trim() == "." {
+        std::env::current_dir().context("reading current directory")
+    } else {
+        let idx = index::load_fresh(cfg, FRESH_SECS);
+        target(&idx, cfg, query)
+    }
+}
+
 fn target(idx: &Index, cfg: &Config, query: &str) -> Result<PathBuf> {
     if query.trim() != "." {
         return aliases::resolve_one(idx, cfg, query);
@@ -441,6 +475,9 @@ fn resume(cfg: &Config, query: &str, print: bool, pick: usize, agent: Option<&st
         let quoted: Vec<String> = args.iter().map(|a| output::shell_word(a)).collect();
         println!("cd {} && {program} {}", output::shell_quote(&wt.path.to_string_lossy()), quoted.join(" "));
         return Ok(ExitCode::SUCCESS);
+    }
+    if handoff::path(&wt.path).is_ok_and(|path| path.is_file()) {
+        eprintln!("Saved handoff available in this worktree. Run `jungle handoff --show` to read it.");
     }
     // agents look sessions up by, or resume into, the working dir 
     let mut cmd = std::process::Command::new(&program);

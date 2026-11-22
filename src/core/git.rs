@@ -40,7 +40,7 @@ fn worktree(home: &Path, sub: &str, args: &[&str]) -> Result<()> {
     bail!("{err}");
 }
 
-fn output(dir: &Path, args: &[&str]) -> Option<String> {
+pub(super) fn output(dir: &Path, args: &[&str]) -> Option<String> {
     let out = command(dir, args).output().ok()?;
     out.status
         .success()

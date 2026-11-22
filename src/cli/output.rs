@@ -14,6 +14,7 @@ pub struct Filter {
     pub repo:   Option<String>,
     pub merged: bool,
     pub risk:   bool,
+    pub handoff: bool,
 }
 
 impl Filter {
@@ -22,7 +23,9 @@ impl Filter {
     }
 
     fn matches(&self, wt: &Worktree, risks: &[Risk]) -> bool {
-        (!self.merged || wt.merged()) && (!self.risk || !risks.is_empty())
+        (!self.merged || wt.merged())
+            && (!self.risk || !risks.is_empty())
+            && (!self.handoff || wt.handoff.is_some())
     }
 }
 
@@ -81,7 +84,10 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config, sort: Option<SortKey>, 
                 last,
                 wt.disk_bytes.map(bytes).unwrap_or_default(),
                 agent(wt, now),
-                note_preview(wt.note.as_deref()),
+                match &wt.handoff {
+                    Some(handoff) => preview(&format!("Next: {}", handoff.next)),
+                    None => preview(wt.note.as_deref().unwrap_or_default()),
+                },
                 tilde(&wt.path),
             ]));
         }
@@ -92,13 +98,18 @@ pub fn table(idx: &Index, filter: &Filter, cfg: &Config, sort: Option<SortKey>, 
     }
     let rows: Vec<_> = rows.into_iter().map(|(_, row)| row).collect();
 
-    println!("{}", summary(&repo_index(idx, filter)));
+    let summary_index = if filter.handoff {
+        filtered_index(idx, filter)
+    } else {
+        repo_index(idx, filter)
+    };
+    println!("{}", summary(&summary_index));
     if rows.is_empty() {
         println!("No worktrees match.");
         return;
     }
     println!();
-    print_rows(["ALIAS", "STATE", "VS_MAIN", "LAST COMMIT", "DISK", "AGENT", "NOTE", "PATH"], &rows);
+    print_rows(["ALIAS", "STATE", "VS_MAIN", "LAST COMMIT", "DISK", "AGENT", "NOTE / HANDOFF", "PATH"], &rows);
 }
 
 pub fn summary(idx: &Index) -> String {
@@ -503,11 +514,25 @@ pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-fn note_preview(note: Option<&str>) -> String {
-    let text = note.unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" ");
+fn preview(text: &str) -> String {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.chars().count() > 60 {
         format!("{}…", text.chars().take(59).collect::<String>())
     } else {
         text
     }
+}
+
+pub fn handoff(saved: &crate::core::handoff::Handoff, current_commit: Option<&str>) {
+    let commit = saved.commit.as_deref().unwrap_or("(no commits yet)");
+    let tracked = if saved.tracked_changes { "yes" } else { "no" };
+    let untracked = if saved.untracked_files { "yes" } else { "no" };
+    let elapsed = age(now().saturating_sub(saved.saved_at));
+    println!("# Worktree handoff\n\nSaved {elapsed} ago at `{commit}`.");
+    println!("Tracked changes at save: {tracked}. Untracked files at save: {untracked}.");
+    if saved.commit.as_deref() != current_commit {
+        let current = current_commit.unwrap_or("(no commits yet)");
+        println!("\n**HEAD has changed since this handoff.** Current HEAD is `{current}`.");
+    }
+    println!("\n{}", saved.markdown);
 }

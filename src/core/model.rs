@@ -78,6 +78,8 @@ pub struct Worktree {
     pub sessions:   Vec<Session>,
     #[serde(default)]
     pub note:       Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff:    Option<super::handoff::Handoff>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
