@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::core::aliases::{repo_names, worktree_alias};
 use crate::core::config::{config_path, expand, home, Config};
+use crate::core::handoff::Handoff;
 use crate::core::index::{self, now};
 use crate::core::model::{Index, Merge, Risk, Status, Worktree};
 
@@ -523,7 +524,17 @@ fn preview(text: &str) -> String {
     }
 }
 
-pub fn handoff(saved: &crate::core::handoff::Handoff, current_commit: Option<&str>) {
+pub fn handoff_json(saved: &Handoff, current_commit: Option<&str>) -> serde_json::Result<()> {
+    let data = serde_json::json!({
+        "handoff": saved,
+        "current_commit": current_commit,
+        "head_changed": saved.commit.as_deref() != current_commit,
+    });
+    println!("{}", serde_json::to_string_pretty(&data)?);
+    Ok(())
+}
+
+pub fn handoff(saved: &Handoff, current_commit: Option<&str>) {
     let commit = saved.commit.as_deref().unwrap_or("(no commits yet)");
     let tracked = if saved.tracked_changes { "yes" } else { "no" };
     let untracked = if saved.untracked_files { "yes" } else { "no" };

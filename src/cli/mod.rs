@@ -150,11 +150,14 @@ enum Command {
         #[arg(default_value = ".", num_args = 1..)]
         query: Vec<String>,
         /// read Markdown starting with a ## Next heading from stdin
-        #[arg(long, conflicts_with = "show")]
+        #[arg(long, conflicts_with_all = ["show", "json"])]
         stdin: bool,
         /// print the saved handoff as Markdown
         #[arg(long)]
         show: bool,
+        /// print the saved handoff and current HEAD as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// list agent sessions per worktree
     Sessions {
@@ -316,12 +319,17 @@ pub fn run() -> Result<ExitCode> {
                 notes::edit(&dir, &path)?;
             }
         }
-        Command::Handoff { query, stdin, show } => {
+        Command::Handoff { query, stdin, show, json } => {
             let dir = metadata_target(&cfg, &query.join(" "))?;
             let path = handoff::path(&dir)?;
-            if show {
+            if show || json {
                 let saved = handoff::read(&path)?.context("no handoff saved for this worktree")?;
-                output::handoff(&saved, handoff::head(&dir)?.as_deref());
+                let current_commit = handoff::head(&dir)?;
+                if json {
+                    output::handoff_json(&saved, current_commit.as_deref())?;
+                } else {
+                    output::handoff(&saved, current_commit.as_deref());
+                }
             } else if stdin {
                 let mut markdown = String::new();
                 io::stdin().read_to_string(&mut markdown).context("reading handoff from stdin")?;
